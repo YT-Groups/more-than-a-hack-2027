@@ -46,6 +46,12 @@ class DeadConfig:
                                 # inside the pitch and moving on more than this share of frames
     live_interior: float = -3.0  # "well inside": at least 3 m from every line
     live_v: float = 3.0          # "moving": faster than this (m/s)
+    # inside a Smart Tagging set-piece window (a prior, not truth)
+    prior_enter: float = 2.5
+    prior_leave: float = 3.0
+    prior_min_core: int = FPS
+    prior_still: int = FPS // 2  # ball below placed_v for this many frames in the core
+    placed_v: float = 0.5        # a placed ball (m/s)
 
 
 @dataclass
@@ -55,27 +61,50 @@ class DeadResult:
     segments: list = field(default_factory=list)   # [(onset, restart, onset_reason, restart_reason)]
 
 
-def cores(activity: np.ndarray, cfg: DeadConfig) -> list[tuple[int, int]]:
-    """Low-activity stretches with hysteresis, merged across short gaps, min length applied."""
-    n = len(activity)
-    act = np.where(np.isnan(activity), cfg.leave, activity)  # no players -> not evidence of dead
-    state = np.zeros(n, dtype=bool)
+def cores(activity: np.ndarray, cfg: DeadConfig, prior: np.ndarray | None = None,
+          ball_still: np.ndarray | None = None) -> list[tuple[int, int]]:
+    """Low-activity stretches with hysteresis, merged across short gaps, min length applied.
+
+    Inside `prior` (set-piece windows) the thresholds are relaxed, and a core shorter than
+    min_core is kept if it is at least prior_min_core long and the ball is still for at least
+    prior_still frames in it (a quickly taken restart).
+    """
+    base = [(a, b) for a, b in _hysteresis(activity, cfg.enter, cfg.leave, cfg.merge_gap)
+            if b - a >= cfg.min_core]
+    if prior is None or not prior.any():
+        return base
+    ball_still = np.zeros(len(activity), dtype=bool) if ball_still is None else ball_still
+    taken = np.zeros(len(activity), dtype=bool)
+    for a, b in base:
+        taken[a:b] = True
+    extra = []
+    act = np.where(prior, activity, np.nan)
+    for a, b in _hysteresis(act, cfg.prior_enter, cfg.prior_leave, cfg.merge_gap):
+        # only quick restarts the base rule missed; never stretch a stoppage it already found
+        if (not taken[a:b].any() and b - a >= cfg.prior_min_core
+                and ball_still[a:b].sum() >= cfg.prior_still):
+            extra.append((a, b))
+    return sorted(base + extra)
+
+
+def _hysteresis(activity: np.ndarray, enter: float, leave: float, merge_gap: int
+                ) -> list[tuple[int, int]]:
+    """Runs where activity drops below `enter` until it rises above `leave`, merged across
+    gaps shorter than `merge_gap`. NaN activity (no players) is not evidence of a stoppage."""
+    act = np.where(np.isnan(activity), np.inf, activity)
+    state = np.zeros(len(act), dtype=bool)
     on = False
-    for i in range(n):  # hysteresis is inherently sequential; 2e5 steps is fast enough
-        a = act[i]
-        if on:
-            on = a < cfg.leave
-        else:
-            on = a < cfg.enter
+    for i in range(len(act)):  # inherently sequential; 2e5 steps is fast enough
+        on = act[i] < (leave if on else enter)
         state[i] = on
     s, e = runs(state)
     merged: list[list[int]] = []
     for a, b in zip(s, e):
-        if merged and a - merged[-1][1] < cfg.merge_gap:
+        if merged and a - merged[-1][1] < merge_gap:
             merged[-1][1] = b
         else:
             merged.append([a, b])
-    return [(a, b) for a, b in merged if b - a >= cfg.min_core]
+    return [(a, b) for a, b in merged]
 
 
 def find_onset(f: Features, start: int, lo: int, cfg: DeadConfig) -> tuple[int, str]:
@@ -186,13 +215,14 @@ def restart_teams(f: Features, segments: list, before: int = FPS // 2, after: in
 
 
 def detect(f: Features, graded: np.ndarray, cfg: DeadConfig = DeadConfig(),
-           kickoffs: dict | None = None) -> DeadResult:
+           kickoffs: dict | None = None, prior: np.ndarray | None = None) -> DeadResult:
     """Dead mask over the match (graded frames only; outside is irrelevant).
 
     `kickoffs` maps a half's first graded frame to its kick-off frame; everything before the
     kick-off is dead (the second half's graded block starts about two minutes before it).
+    `prior` marks set-piece windows from Smart Tagging (see cores()).
     """
-    res = _detect_cores(f, graded, cfg)
+    res = _detect_cores(f, graded, cfg, prior)
     for lo, k in (kickoffs or {}).items():
         if k is None or k - lo < 2 * FPS:
             continue  # the graded block already starts at the kick-off (half 1)
@@ -208,7 +238,8 @@ def detect(f: Features, graded: np.ndarray, cfg: DeadConfig = DeadConfig(),
     return res
 
 
-def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig) -> DeadResult:
+def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig,
+                  prior: np.ndarray | None = None) -> DeadResult:
     n = len(graded)
     dead = np.zeros(n, dtype=bool)
     conf = np.zeros(n)
@@ -218,7 +249,8 @@ def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig) -> DeadResul
     hs, he = runs(graded)
     live_ball = (f.ball_vis & (np.nan_to_num(f.ball_out, nan=99.0) < cfg.live_interior)
                  & (np.nan_to_num(f.ball_v) > cfg.live_v))
-    for (c0, c1) in cores(act, cfg):
+    placed = np.nan_to_num(f.ball_v, nan=np.inf) < cfg.placed_v
+    for (c0, c1) in cores(act, cfg, prior, placed):
         if live_ball[c0:c0 + max(1, (c1 - c0) // 2)].mean() > cfg.live_veto:
             continue  # slow build-up play, not a stoppage
         # half the core belongs to: clip searches to it
