@@ -232,8 +232,14 @@ did not change anything to remove them:
 - **The ATD ball near the touchline** sits about 1.5 m inside, so "out" uses a 1 m margin beyond
   the line. Some balls that leave the pitch are never seen to.
 - **Slot teams are trusted.** A tracklet that switches between players of opposite teams would put
-  control on the wrong side; we saw no sign of it in the team counts, but we did not search for it
-  systematically.
+  control on the wrong side. We measured how often the tracking shows signs of this, over the whole
+  match [measured]. Of 3.25 million consecutive slot positions, 83 move more than 2 m in one frame
+  (five times sprint speed) and none move more than 5 m. A home and an away slot stay within 0.5 m
+  of each other for at least 1 s 51 times (1.1% of graded frames), mostly far from the ball (94
+  frames within 3 m of it), which is consistent with tight marking rather than one player tracked
+  twice. Only 4 of our 165 direct possession changes have either sign within 2 s near the ball.
+  The two public-window disagreements in section 6 show neither sign, so the tracking cannot reveal
+  them, and we built no correction for them.
 - **Distances are 2D.** Aerial balls look close to players they fly over. The contest and
   relative-speed tests remove most of them, but not all.
 - **With more time** we would add: (1) team-shape evidence (the team in possession spreads out and
