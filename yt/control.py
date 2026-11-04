@@ -1,6 +1,6 @@
 """Ball control detection: which team, if any, has a player on the ball.
 
-Definition (CLAUDE.md section 4): a team has control when one of its players stays close to the
+Definition (docs/YT.md section 4): a team has control when one of its players stays close to the
 ball for a dwell period with no opponent challenging it. A confirmed run is stamped from its
 first frame, so no second dwell is applied downstream.
 

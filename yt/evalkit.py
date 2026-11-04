@@ -54,7 +54,7 @@ def spells(labels: np.ndarray, graded: np.ndarray) -> list[tuple[str, int, int]]
 
 
 def proxies(labels: np.ndarray, graded: np.ndarray) -> dict:
-    """Label-free sanity numbers for the whole match (CLAUDE.md 6.9)."""
+    """Label-free sanity numbers for the whole match (docs/YT.md section 6)."""
     g = labels[graded]
     sp = spells(labels, graded)
     lengths = np.array([b - a for _, a, b in sp]) / FPS if sp else np.zeros(0)
