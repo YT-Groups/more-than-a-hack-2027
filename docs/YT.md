@@ -228,6 +228,15 @@ did not change anything to remove them:
 - **Blind restarts.** 83 of 139 restarts have no visible kick. They are placed with the median
   kick-to-activity lag from the visible ones, but that lag varies (interquartile range about
   -0.7 to +1.2 s), and a late or early restart moves the start of the next possession.
+  We tried to do better from the players alone, and tested it without labels. On the 52 restarts
+  outside the public window where the kick is visible, we hid the ball and estimated the kick
+  from player movement, fitting each method's offset on one half and testing it on the other
+  [measured]. The current lag rule has a median error of 0.96 s (62% within 1 s). None of the
+  four alternatives beat it once early calls are counted: when activity bottoms out (0.96 s),
+  the steepest acceleration of the players (0.86 s, but 18 early calls over 1 s against 12),
+  the players near the last-seen ball speeding up (1.20 s), or a jump in the share of running
+  players (1.10 s). Neither did a median of three of them (0.96 s; better on 9 restarts, worse
+  on 11). So we kept the lag rule. A restart's timing seems to need the ball, or the video.
 - **Onset timing** depends on which event comes first. When players slow before the whistle (an
   advantage being played, or a slow attack stopped by a foul), the deceleration onset fires early.
 - **The ATD ball near the touchline** sits about 1.5 m inside, so "out" uses a 1 m margin beyond
