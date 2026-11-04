@@ -36,7 +36,10 @@ def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.nd
     """Labels for the whole match plus intermediate results for inspection."""
     m = m if m is not None else load_match()
     f = f if f is not None else features.compute(m)
-    d = dead.detect(f, m.graded, cfg.dead)
+    kickoffs = {}
+    for h, (lo, hi) in enumerate(zip(*features.runs(m.graded)), start=1):
+        kickoffs[int(lo)] = dead.kickoff_frame(m, f, int(lo), int(hi), h)
+    d = dead.detect(f, m.graded, cfg.dead, kickoffs=kickoffs)
     c = control.detect(m, f, cfg.control)
     rt = dead.restart_teams(f, d.segments) if cfg.use_restart_team else {}
     labels = machine.label(c.ctrl, d.dead, m.graded, m.half, restart_team=rt,

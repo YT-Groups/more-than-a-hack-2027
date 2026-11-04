@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .features import Features, rolling, runs
-from .load import FPS
+from .load import FPS, HOME, PITCH, Match
 
 
 @dataclass(frozen=True)
@@ -121,6 +121,47 @@ def find_restart(f: Features, end: int, hi: int, cfg: DeadConfig) -> tuple[int, 
     return max(a, end - cfg.blind_restart_lead), "blind"
 
 
+def kickoff_frame(m: Match, f: Features, lo: int, hi: int, half: int,
+                  centre_r: float = 5.0, own_half_share: float = 0.75, halfway_tol: float = 1.5,
+                  kick_v: float = 4.0, lineup: int = 2 * FPS,
+                  search: int = 10 * 60 * FPS) -> int | None:
+    """First kick-off of a half: the ball near the centre spot and kicked within a second, after
+    both teams have stood in their own halves for `lineup` frames (mean share of tracked players
+    on the correct side at least `own_half_share`). Averaging over the line-up tolerates
+    duplicated objects and the odd wrong-team slot, and rejects a pre-match kickabout.
+
+    Own halves come from the metadata's first-half attack direction, swapped for half 2.
+    Returns the kick frame, or None if no such moment is found in the first `search` frames.
+    """
+    L, W = PITCH
+    home_left = (m.attack_dir_home_h1 == "left_to_right") == (half == 1)
+    hi = min(hi, lo + search)
+    x = m.players_xy[lo:hi, :, 0]
+    seen = ~np.isnan(x)
+    # players standing on the halfway line count for both sides
+    in_left = x < L / 2 + halfway_tol
+    in_right = x > L / 2 - halfway_tol
+    home = m.team == HOME
+    home_ok = in_left if home_left else in_right
+    away_ok = in_right if home_left else in_left
+    with np.errstate(invalid="ignore", divide="ignore"):
+        h_ok = (home_ok & seen & home).sum(1) / (seen & home).sum(1)
+        a_ok = (away_ok & seen & ~home).sum(1) / (seen & ~home).sum(1)
+    share = np.fmin(np.nan_to_num(h_ok), np.nan_to_num(a_ok))
+    c = np.concatenate(([0.0], np.cumsum(share)))
+    i = np.arange(len(share))
+    before = (c[i] - c[np.maximum(0, i - lineup)]) / np.maximum(1, i - np.maximum(0, i - lineup))
+    formation = (before >= own_half_share) | ((i == 0) & (share >= own_half_share))
+    near = np.hypot(m.ball_xy[lo:hi, 0] - L / 2, m.ball_xy[lo:hi, 1] - W / 2) <= centre_r
+    v = np.nan_to_num(f.ball_v[lo:hi])
+    kicked = v > kick_v
+    for i in np.flatnonzero(near & formation):
+        j = np.flatnonzero(kicked[i:i + FPS])
+        if j.size:
+            return lo + i + int(j[0])
+    return None
+
+
 def restart_teams(f: Features, segments: list, before: int = FPS // 2, after: int = FPS // 4,
                   radius: float = 3.0) -> dict:
     """Restart frame -> team of the taker (+1/-1), where the ball is visible near the restart.
@@ -144,8 +185,30 @@ def restart_teams(f: Features, segments: list, before: int = FPS // 2, after: in
     return out
 
 
-def detect(f: Features, graded: np.ndarray, cfg: DeadConfig = DeadConfig()) -> DeadResult:
-    """Dead mask over the match (graded frames only; outside is irrelevant)."""
+def detect(f: Features, graded: np.ndarray, cfg: DeadConfig = DeadConfig(),
+           kickoffs: dict | None = None) -> DeadResult:
+    """Dead mask over the match (graded frames only; outside is irrelevant).
+
+    `kickoffs` maps a half's first graded frame to its kick-off frame; everything before the
+    kick-off is dead (the second half's graded block starts about two minutes before it).
+    """
+    res = _detect_cores(f, graded, cfg)
+    for lo, k in (kickoffs or {}).items():
+        if k is None or k - lo < 2 * FPS:
+            continue  # the graded block already starts at the kick-off (half 1)
+        res.dead[lo:k] = True
+        res.conf[lo:k] = 1.0
+        keep = [s for s in res.segments if s[1] <= lo or s[0] >= k]
+        over = [s for s in res.segments if not (s[1] <= lo or s[0] >= k)]
+        end = max([k] + [s[1] for s in over])
+        why = "kickoff" if end == k else next(s[3] for s in over if s[1] == end)
+        res.dead[lo:end] = True
+        res.segments = sorted(keep + [(int(lo), int(end), "half_start", why)])
+    res.dead &= graded
+    return res
+
+
+def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig) -> DeadResult:
     n = len(graded)
     dead = np.zeros(n, dtype=bool)
     conf = np.zeros(n)
