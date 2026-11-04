@@ -60,9 +60,19 @@ def main() -> None:
     ap.add_argument("--log", metavar="NAME", help="append a row to reports/ablation.csv")
     ap.add_argument("--note", default="")
     ap.add_argument("--bootstrap", type=int, default=0)
+    ap.add_argument("--variant", choices=["C1", "C2", "C3"], help="control variant override")
+    ap.add_argument("--min-len", type=int, help="minimum possession length override")
+    ap.add_argument("--no-restart-team", action="store_true")
     args = ap.parse_args()
 
     cfg = PipelineConfig()
+    if args.variant:
+        cfg = dataclasses.replace(
+            cfg, control=dataclasses.replace(cfg.control, variant=args.variant))
+    if args.min_len is not None:
+        cfg = dataclasses.replace(cfg, min_len=args.min_len)
+    if args.no_restart_team:
+        cfg = dataclasses.replace(cfg, use_restart_team=False)
     labels, _ = build(cfg)
     write_csv(args.out, labels)
     print("wrote", args.out)

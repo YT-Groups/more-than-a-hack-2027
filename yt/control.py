@@ -14,6 +14,7 @@ Variants, compared in the technical document:
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
 import numpy as np
@@ -24,7 +25,7 @@ from .load import FPS, HOME, Match
 
 @dataclass(frozen=True)
 class ControlConfig:
-    variant: str = "C2"
+    variant: str = "C3"
     r_in: float = 2.0
     r_out: float = 2.5
     contest_radius: float = 1.5
@@ -134,9 +135,28 @@ def confirm(cand: np.ndarray, dwell: int) -> np.ndarray:
     return out
 
 
+def backdate(ctrl: np.ndarray, proximity: np.ndarray) -> np.ndarray:
+    """Extend each confirmed run back over the contiguous same-team proximity run it sits in.
+
+    C3 rejects the first frames of a reception (ball still arriving at speed). Control is
+    decided by C3 but timed from when the player first got close, as in C2.
+    """
+    out = ctrl.copy()
+    for team in (1, -1):
+        s, e = runs(proximity == team)
+        for a, b in zip(s, e):
+            if (ctrl[a:b] == team).any():
+                first = a + int(np.argmax(ctrl[a:b] == team))
+                out[a:first] = team
+    return out
+
+
 def detect(m: Match, f: Features, cfg: ControlConfig = ControlConfig(), **kw) -> ControlResult:
     cand, dn, reason = candidates(m, f, cfg, **kw)
     ctrl = confirm(cand, cfg.dwell)
+    if cfg.variant == "C3":
+        prox, _, _ = candidates(m, f, dataclasses.replace(cfg, variant="C2"))
+        ctrl = backdate(ctrl, prox)
     reason = reason.copy()
     reason[(cand != 0) & (ctrl == 0)] = 4
     conf = np.where(ctrl != 0, np.clip(1.0 - dn / max(cfg.r_out, 1e-9), 0.0, 1.0), 0.0)
