@@ -99,7 +99,7 @@ def main() -> None:
     print("public window  macroF1 {:.4f}  spellF1 {:.4f}  spells {} (gt {})".format(
         pub["macro_f1"], pub["spell_f1_mean"], pub["n_pred_spells"], pub["n_gt_spells"]))
     if args.bootstrap:
-        print("  spellF1 bootstrap 95% [{:.4f}, {:.4f}]".format(
+        print("  spellF1 bootstrap 90% (5th-95th pct) [{:.4f}, {:.4f}]".format(
             pub["spell_bootstrap_low"], pub["spell_bootstrap_high"]))
     print("full match proxies", json.dumps({k: round(v, 4) if isinstance(v, float) else v
                                             for k, v in prox.items()}))
