@@ -54,6 +54,13 @@ class DeadConfig:
     placed_v: float = 0.5        # a placed ball (m/s)
     # edges with no visible event use lags measured on this match's visible events
     self_calibrate: bool = True
+    # a gentler first touch before the restart kick (short corner, throw-in), see find_tap()
+    tap_restart: bool = True
+    tap_v: float = 2.5          # ball "moving" (m/s)
+    tap_still_v: float = 1.0    # ball "still" just before (m/s)
+    tap_holder_r: float = 2.5   # a player "has" the ball within this distance (m)
+    tap_travel: float = 2.0     # the ball must travel at least this far (m)
+    tap_act_rise: float = 0.5   # players speed up by at least this much (m/s)
     min_calibration: int = 10
 
 
@@ -154,8 +161,63 @@ def find_restart(f: Features, end: int, hi: int, cfg: DeadConfig) -> tuple[int, 
     # a kick is the first fast frame after a still frame within the previous second
     kicks = np.flatnonzero(fast & ~np.r_[False, fast[:-1]] & still_before(still, FPS))
     if kicks.size:
-        return a + int(kicks[-1]), "kick"
+        k = a + int(kicks[-1])
+        if cfg.tap_restart:
+            t = find_tap(f, k, cfg)
+            if t is not None:
+                return t, "tap"
+        return k, "kick"
     return max(a, end - cfg.blind_restart_lead), "blind"
+
+
+def _holder(f: Features, a: int, b: int, radius: float) -> int:
+    """Most frequent slot nearest the ball (within radius) over [a, b), or -1."""
+    a = max(0, a)
+    ok = f.ball_vis[a:b] & (f.near_d[a:b] <= radius)
+    if not ok.any():
+        return -1
+    slots, counts = np.unique(f.near_slot[a:b][ok], return_counts=True)
+    return int(slots[np.argmax(counts)])
+
+
+def find_tap(f: Features, kick: int, cfg: DeadConfig) -> int | None:
+    """An earlier, gentler restart than `kick`, if one is clearly visible.
+
+    The last still -> fast transition can be a second touch: a short corner tap or a throw-in
+    reaches a team-mate, who then plays the ball on. A first movement counts as the restart only
+    if the ball leaves one player and reaches a different one at least tap_travel metres away,
+    and the players speed up (mean p90 speed over the next second at least tap_act_rise above
+    the second before). A ball repositioned by the same player, with everyone still walking,
+    fails both tests, so placements are not mistaken for restarts. Earliest qualifying movement
+    in the restart_search window before the kick wins; None keeps the kick.
+    """
+    if f.near_slot is None:
+        return None
+    a = max(0, kick - cfg.restart_search)
+    a0 = max(0, a - FPS // 2)  # read the "still before" history from before the window too
+    v = f.ball_v[a0:kick]
+    moving = np.nan_to_num(v, nan=0.0) > cfg.tap_v
+    still = np.nan_to_num(v, nan=np.inf) < cfg.tap_still_v
+    starts = np.flatnonzero(moving & ~np.r_[False, moving[:-1]] & still_before(still, FPS // 2))
+    for s in starts + a0:
+        if s < a:
+            continue
+        if s >= kick - FPS // 5:
+            break
+        before = _holder(f, s - FPS // 2, s, cfg.tap_holder_r)
+        after = _holder(f, s + FPS // 2, s + 2 * FPS, cfg.tap_holder_r)
+        if before < 0 or after < 0 or before == after:
+            continue
+        seen = np.flatnonzero(f.ball_vis[s:s + 2 * FPS]) + s
+        p0 = s - 1 if f.ball_vis[s - 1] else s
+        travel = np.nanmax(np.linalg.norm(f.ball_xy[seen] - f.ball_xy[p0], axis=1)) \
+            if seen.size and f.ball_xy is not None else 0.0
+        if travel < cfg.tap_travel:
+            continue
+        rise = np.nanmean(f.activity_raw[s:s + FPS]) - np.nanmean(f.activity_raw[s - FPS:s])
+        if rise >= cfg.tap_act_rise:
+            return int(s)
+    return None
 
 
 def kickoff_frame(m: Match, f: Features, lo: int, hi: int, half: int,
@@ -268,7 +330,7 @@ def _calibrate(f: Features, kept: list, hs: np.ndarray, he: np.ndarray, n: int,
                 on.append(c0 - o)
         if c1 < h_hi:
             r, why = find_restart(f, c1, h_hi, cfg)
-            if why == "kick":
+            if why in ("kick", "tap"):
                 re.append(c1 - r)
     lag_on = int(np.median(on)) if len(on) >= cfg.min_calibration else None
     lag_re = int(np.median(re)) if len(re) >= cfg.min_calibration else None
