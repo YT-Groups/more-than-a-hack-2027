@@ -32,12 +32,37 @@ python evaluation/run_evaluation.py --results <folder with YT.csv and the baseli
   example, are 5–8 s late because the raw tracking shows the other team on the ball.
 - **No flicker.** Fragmentation is 1.00: 21 predicted segments against 21 true.
 
-## How much this tells us
+## What this tells us
 
-17 possessions are too few to rank anything. The scorer itself reports that gaps under about 0.33
-spellF1 are within noise here. The public window also has the ball visible on 88% of frames,
-against 59% over the full match. These results show the pipeline is aligned and the labels mean
-the right thing. They do not predict the full-match score, which is private.
+**What it confirms**
+
+- **The pipeline is aligned.** Frame indexing, home and away, and what each label means are all
+  right. An off-by-one or a team swap would have collapsed the scores.
+- **The dead-ball detector works.** It is the largest single gain over the baselines.
+- **We do not flicker.** 17 possessions against 17 true, with almost the same mean length. The
+  baselines either invent possessions (26 to 131) or merge them.
+
+**Where it points: the boundaries are a few seconds off**
+
+- spellF1 is 0.65 when a 30% overlap is enough, but only 0.24 at 70%. So we usually find the right
+  possession but start or end it a few seconds early or late. The ranking metric averages over all
+  five thresholds, so sharper boundaries are where the remaining points are, not more possessions.
+- Part of the error is in the data, not our method. Where the raw tracking shows the other team on
+  the ball (the first three changes of the window), we are late by construction.
+- The rest is our stoppage timing, especially the 83 restarts where the kick is not visible.
+
+**What it cannot tell us**
+
+- **Our final rank.** 17 possessions are too few: the scorer itself says gaps under about 0.33
+  spellF1 are within noise here, and our 95% interval is 0.35–0.66.
+- **How we do on the hard parts of the match.** The ball is visible on 88% of frames in this
+  window, against 59% over the full match.
+- **Whether one of our versions beats another.** That is why versions were chosen by reasoning and
+  label-free full-match checks, not by this score.
+
+**Bottom line.** We are clearly above the published floor and the method is sound. Any further
+effort before the feature freeze should go on restart and stoppage timing, not on control
+detection. Such a change has to be justified by reasoning, because this window cannot confirm it.
 
 ## Full-match checks (no labels)
 
