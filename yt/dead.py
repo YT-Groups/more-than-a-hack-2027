@@ -52,6 +52,9 @@ class DeadConfig:
     prior_min_core: int = FPS
     prior_still: int = FPS // 2  # ball below placed_v for this many frames in the core
     placed_v: float = 0.5        # a placed ball (m/s)
+    # edges with no visible event use lags measured on this match's visible events
+    self_calibrate: bool = True
+    min_calibration: int = 10
 
 
 @dataclass
@@ -126,7 +129,12 @@ def find_onset(f: Features, start: int, lo: int, cfg: DeadConfig) -> tuple[int, 
     act = rolling(f.activity_raw[seg], 10, "mean")
     if np.all(np.isnan(act)):
         return start, "core"
-    return a + int(np.nanargmax(act)), "decel"
+    peak = int(np.nanargmax(act))
+    if peak <= FPS // 5 and a > lo:
+        # activity was already falling when the window opened: the peak is an artefact of the
+        # window, not a deceleration onset
+        return a + peak, "decel_edge"
+    return a + peak, "decel"
 
 
 def still_before(still: np.ndarray, window: int) -> np.ndarray:
@@ -238,6 +246,35 @@ def detect(f: Features, graded: np.ndarray, cfg: DeadConfig = DeadConfig(),
     return res
 
 
+def _calibrate(f: Features, kept: list, hs: np.ndarray, he: np.ndarray, n: int,
+               cfg: DeadConfig) -> tuple[int | None, int | None]:
+    """Median lag between a visible event and the activity core, measured on this match.
+
+    Onset: core start minus the frame the ball went out or was lost, over stoppages where one
+    of those is visible. Restart: core end minus the visible restart kick. These lags are then
+    used for the stoppages where no event is visible, instead of fixed guesses. No labels are
+    involved: the "truth" here is the ball itself. Returns None for a lag with fewer than
+    cfg.min_calibration events (the fixed fallback is then used).
+    """
+    if not cfg.self_calibrate:
+        return None, None
+    on, re = [], []
+    for c0, c1 in kept:
+        h = np.searchsorted(he, c0, side="right")
+        h_lo, h_hi = (hs[h], he[h]) if h < len(hs) else (0, n)
+        if c0 > h_lo:
+            o, why = find_onset(f, c0, h_lo, cfg)
+            if why in ("ball_out", "ball_lost"):
+                on.append(c0 - o)
+        if c1 < h_hi:
+            r, why = find_restart(f, c1, h_hi, cfg)
+            if why == "kick":
+                re.append(c1 - r)
+    lag_on = int(np.median(on)) if len(on) >= cfg.min_calibration else None
+    lag_re = int(np.median(re)) if len(re) >= cfg.min_calibration else None
+    return lag_on, lag_re
+
+
 def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig,
                   prior: np.ndarray | None = None) -> DeadResult:
     n = len(graded)
@@ -250,9 +287,10 @@ def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig,
     live_ball = (f.ball_vis & (np.nan_to_num(f.ball_out, nan=99.0) < cfg.live_interior)
                  & (np.nan_to_num(f.ball_v) > cfg.live_v))
     placed = np.nan_to_num(f.ball_v, nan=np.inf) < cfg.placed_v
-    for (c0, c1) in cores(act, cfg, prior, placed):
-        if live_ball[c0:c0 + max(1, (c1 - c0) // 2)].mean() > cfg.live_veto:
-            continue  # slow build-up play, not a stoppage
+    kept = [(c0, c1) for c0, c1 in cores(act, cfg, prior, placed)
+            if live_ball[c0:c0 + max(1, (c1 - c0) // 2)].mean() <= cfg.live_veto]
+    lag_on, lag_re = _calibrate(f, kept, hs, he, n, cfg)
+    for (c0, c1) in kept:
         # half the core belongs to: clip searches to it
         h = np.searchsorted(he, c0, side="right")
         h_lo, h_hi = (hs[h], he[h]) if h < len(hs) else (0, n)
@@ -261,10 +299,14 @@ def _detect_cores(f: Features, graded: np.ndarray, cfg: DeadConfig,
             onset, why_on = h_lo, "half_start"
         else:
             onset, why_on = find_onset(f, c0, lo, cfg)
+            if why_on in ("decel_edge", "core") and lag_on is not None:
+                onset, why_on = max(lo, c0 - lag_on), "calibrated"
         if c1 >= h_hi:
             restart, why_re = h_hi, "half_end"
         else:
             restart, why_re = find_restart(f, c1, h_hi, cfg)
+            if why_re == "blind" and lag_re is not None:
+                restart, why_re = min(h_hi, max(c0, c1 - lag_re)), "calibrated"
         restart = max(restart, onset + 1)
         dead[onset:restart] = True
         depth = np.clip((cfg.leave - np.nanmean(act[c0:c1])) / cfg.leave, 0, 1)
