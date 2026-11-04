@@ -72,6 +72,8 @@ def main() -> None:
     ap.add_argument("--min-len", type=int, help="minimum possession length override")
     ap.add_argument("--no-restart-team", action="store_true")
     ap.add_argument("--no-tags", action="store_true", help="ignore Smart Tagging")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="parse the raw ATD instead of reading data/cache")
     args = ap.parse_args()
 
     cfg = PipelineConfig()
@@ -84,7 +86,7 @@ def main() -> None:
         cfg = dataclasses.replace(cfg, use_restart_team=False)
     if args.no_tags:
         cfg = dataclasses.replace(cfg, use_tags=False)
-    labels, _ = build(cfg)
+    labels, _ = build(cfg, m=load_match(use_cache=not args.no_cache))
     write_csv(args.out, labels)
     print("wrote", args.out)
 
