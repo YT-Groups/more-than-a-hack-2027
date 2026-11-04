@@ -18,7 +18,7 @@ import warnings
 
 import numpy as np
 
-from yt import control, dead, evalkit, features, machine
+from yt import control, dead, evalkit, features, machine, tags
 from yt.load import ROOT, load_match
 
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -30,6 +30,7 @@ class PipelineConfig:
     dead: dead.DeadConfig = dead.DeadConfig()
     min_len: int = 25
     use_restart_team: bool = True
+    use_tags: bool = True
 
 
 def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.ndarray, dict]:
@@ -39,9 +40,13 @@ def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.nd
     kickoffs = {}
     for h, (lo, hi) in enumerate(zip(*features.runs(m.graded)), start=1):
         kickoffs[int(lo)] = dead.kickoff_frame(m, f, int(lo), int(hi), h)
-    d = dead.detect(f, m.graded, cfg.dead, kickoffs=kickoffs)
+    events = tags.load() if cfg.use_tags else []
+    prior = tags.prior_mask(events, m.n) if cfg.use_tags else None
+    d = dead.detect(f, m.graded, cfg.dead, kickoffs=kickoffs, prior=prior)
     c = control.detect(m, f, cfg.control)
     rt = dead.restart_teams(f, d.segments) if cfg.use_restart_team else {}
+    if cfg.use_restart_team and cfg.use_tags:
+        rt = tags.fill_restart_teams(rt, d.segments, tags.team_hints(events))
     labels = machine.label(c.ctrl, d.dead, m.graded, m.half, restart_team=rt,
                            min_len=cfg.min_len)
     return labels, {"match": m, "features": f, "dead": d, "control": c, "restart_team": rt}
@@ -66,6 +71,7 @@ def main() -> None:
     ap.add_argument("--variant", choices=["C1", "C2", "C3"], help="control variant override")
     ap.add_argument("--min-len", type=int, help="minimum possession length override")
     ap.add_argument("--no-restart-team", action="store_true")
+    ap.add_argument("--no-tags", action="store_true", help="ignore Smart Tagging")
     args = ap.parse_args()
 
     cfg = PipelineConfig()
@@ -76,6 +82,8 @@ def main() -> None:
         cfg = dataclasses.replace(cfg, min_len=args.min_len)
     if args.no_restart_team:
         cfg = dataclasses.replace(cfg, use_restart_team=False)
+    if args.no_tags:
+        cfg = dataclasses.replace(cfg, use_tags=False)
     labels, _ = build(cfg)
     write_csv(args.out, labels)
     print("wrote", args.out)
