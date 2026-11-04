@@ -126,7 +126,7 @@ frames after the receiver reaches it. We use track slots only to read the team.
 
 **Variants compared** (all with the same dead-ball detector and state machine, submitted settings otherwise):
 
-| variant | rule | possessions (full match) | mean length | public macroF1 | public spellF1 [95% CI] |
+| variant | rule | possessions (full match) | mean length | public macroF1 | public spellF1 [90% bootstrap interval] |
 |---|---|---|---|---|---|
 | C1 | nearest player within 2 m, 10-frame dwell | 415 | 8.1 s | 0.842 | 0.442 [0.295, 0.579] |
 | C2 | C1 + contest test + hysteresis | 440 | 7.7 s | 0.850 | 0.508 [0.368, 0.649] |
