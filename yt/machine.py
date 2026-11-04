@@ -1,6 +1,6 @@
 """State machine: confirmed control + dead mask -> H / A / D / X per frame.
 
-Rules (CLAUDE.md 6.8):
+Rules (docs/YT.md section 5):
   1. dead frames are D, with no owner;
   2. in play, possession changes only at the first frame of a confirmed control run by the
      other team (the control detector already applied the dwell);

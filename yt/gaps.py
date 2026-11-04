@@ -1,4 +1,4 @@
-"""Ball-gap report (CLAUDE.md 6.3): where and when the tracker loses the ball.
+"""Ball-gap report: where and when the tracker loses the ball.
 
     python -m yt.gaps            # writes reports/gaps.md
 

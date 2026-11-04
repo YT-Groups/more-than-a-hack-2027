@@ -11,7 +11,7 @@ then moved to the events that actually start and end it:
            moving fast close to the end of the core. Without a visible ball, a fixed lead
            ahead of the activity rise is used.
 
-A missing ball on its own is never treated as dead (CLAUDE.md 6.6.3); it only places an onset
+A missing ball on its own is never treated as dead; it only places an onset
 inside a stretch that the players already say is a stoppage.
 
 All thresholds are set from physical reasoning or from label-free statistics of the match,
