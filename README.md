@@ -1,3 +1,14 @@
+> **Team YT submission.** Our pipeline lives in `yt/` and `run_pipeline.py`; the technical
+> document is [docs/YT.md](docs/YT.md). To regenerate `YT.csv` from the data bundle:
+>
+> ```bash
+> pip install -r requirements.txt
+> python run_pipeline.py --out YT.csv
+> ```
+>
+> `scripts/clean_clone_check.sh YT.csv` rebuilds it from a fresh clone and checks the hash.
+> Everything below this box is the organisers' README, unchanged.
+
 # More than a Hack 2027 — Phase 1: Ball Possession
 
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
