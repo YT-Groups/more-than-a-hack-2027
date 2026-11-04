@@ -105,8 +105,8 @@ touch the dead mask.
 
 **Label-free checks** [measured]: 55 of the 59 tagged set pieces overlap a detected stoppage (the
 remaining ones include the opening kick-off, which is the start of the graded block). The dead
-share of graded frames is 46.9%, which is plausible for LaLiga, whose effective playing time is
-commonly reported near 52–55 minutes per match.
+share of graded frames is 46.9%, which is plausible: LaLiga's effective playing time is
+commonly reported to be low, around 52–55 minutes per match (a public figure we did not verify).
 
 ## 4. Control
 
@@ -216,6 +216,7 @@ did not change anything to remove them:
   clear kick at 17,873 where we restart.
 
 **Not done:**
+
 - We did not estimate the ball position from player movement during gaps. Gaps in live play are
   rare (14% of live frames), and only 2 of 84 such gaps longer than 1 s end with the other team in
   control.
