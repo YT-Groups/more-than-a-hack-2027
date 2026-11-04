@@ -37,6 +37,9 @@ class Features:
     d_home: np.ndarray          # nearest home player distance to ball
     d_away: np.ndarray          # nearest away player distance to ball
     n_objects: np.ndarray       # tracked objects per frame
+    near_slot: np.ndarray | None = None  # slot nearest the ball (-1 if none); identity is only
+    near_d: np.ndarray | None = None     # trusted over a second or two, never across a match
+    ball_xy: np.ndarray | None = None    # (n, 2) metres, as loaded
 
 
 def ball_speed(ball_xy: np.ndarray, smooth: int = 5) -> np.ndarray:
@@ -77,8 +80,14 @@ def compute(m: Match) -> Features:
     b = m.ball_xy
     out = np.maximum.reduce([-b[:, 0], b[:, 0] - L, -b[:, 1], b[:, 1] - W])
     d_home, d_away = nearest_by_team(b, m.players_xy, m.team)
+    d = np.linalg.norm(m.players_xy - b[:, None, :], axis=2)
+    d = np.where(np.isnan(d), np.inf, d)
+    slot = np.argmin(d, axis=1)
+    near_d = d[np.arange(len(d)), slot]
+    slot = np.where(np.isfinite(near_d), slot, -1)
     return Features(
         activity=act, activity_raw=act_raw, ball_vis=~np.isnan(b[:, 0]),
         ball_v=ball_speed(b), ball_out=out, d_home=d_home, d_away=d_away,
         n_objects=(~np.isnan(m.players_xy[:, :, 0])).sum(1),
+        near_slot=slot, near_d=near_d, ball_xy=b,
     )

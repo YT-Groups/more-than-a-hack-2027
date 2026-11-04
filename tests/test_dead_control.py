@@ -79,6 +79,38 @@ class TestDetect(unittest.TestCase):
         self.assertTrue(r.dead[:300].all() and not r.dead[300:].any())
 
 
+class TestTap(unittest.TestCase):
+    """A first touch to a team-mate is the restart; a repositioned ball is not."""
+
+    def scene(self, receiver_slot, act_after):
+        n = 400
+        kick = 300                     # v4's last still -> fast transition
+        v = np.full(n, 0.2)
+        v[200:215] = 4.0               # first movement at 200
+        v[215:299] = 0.3               # ball at rest again
+        v[300:] = 9.0                  # second movement (the "kick")
+        xy = np.zeros((n, 2))
+        xy[215:] = [6.0, 0.0]          # first movement carries the ball 6 m
+        slot = np.zeros(n, int)
+        slot[215:] = receiver_slot
+        act = np.r_[np.full(200, 1.0), np.full(200, act_after)]
+        f = features(n, act, ball_v=v)
+        f.near_slot, f.near_d, f.ball_xy = slot, np.full(n, 0.5), xy
+        return f, kick
+
+    def test_throw_to_team_mate_is_the_restart(self):
+        f, kick = self.scene(receiver_slot=7, act_after=2.0)
+        self.assertEqual(dead.find_tap(f, kick, dead.DeadConfig()), 200)
+
+    def test_same_player_repositioning_is_not(self):
+        f, kick = self.scene(receiver_slot=0, act_after=2.0)
+        self.assertIsNone(dead.find_tap(f, kick, dead.DeadConfig()))
+
+    def test_no_speed_up_is_not(self):
+        f, kick = self.scene(receiver_slot=7, act_after=1.1)
+        self.assertIsNone(dead.find_tap(f, kick, dead.DeadConfig()))
+
+
 class TestConfirm(unittest.TestCase):
     def test_dwell_and_first_frame(self):
         cand = np.array([0, 1, 1, 1, 0, -1, -1, -1, -1, -1, 0], np.int8)
