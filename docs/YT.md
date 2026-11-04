@@ -58,7 +58,7 @@ frames have a median of 10.7 s; 85% of the missing frames are in gaps longer tha
 0.1% in gaps of 25 frames or fewer. So short-gap interpolation, the usual first fix, is close to
 worthless here. But while the ball is missing the players are slow (median p90 player speed
 1.58 m/s, against 3.41 m/s when the ball is visible): the tracker loses the ball mostly when it
-is out of play. On frames our detector calls live the ball is missing only 13.4% of the time.
+is out of play. On frames our detector calls live the ball is missing only 14.1% of the time.
 
 **The public window is unrepresentative** [measured]: the ball is visible on 88% of its frames,
 against 59% over the match. Scores on it say little about the hard parts of the full match.
@@ -85,7 +85,14 @@ keeps moving between players.
   else the moment the tracker lost the ball, else the peak of player activity in the 5 s before
   the core (the players start to decelerate at the whistle);
 - *restart*: the last "kick" (ball speed from below 2 m/s to above 5 m/s) between 4 s before and
-  2 s after the core ends. With no visible kick, 0.5 s before the activity rise [assumed].
+  2 s after the core ends.
+
+**Self-calibration for edges we cannot see.** When no kick is visible (83 of 139 restarts), or the
+deceleration peak sits at the very start of the search window (activity already falling, 22
+onsets), the edge is placed using a lag measured on this match from the edges we *can* see. Where
+the ball is seen to go out or be lost, the core starts a median of 46 frames (1.8 s) later. Where a
+kick is visible, the core ends a median of 8 frames (0.3 s) after it [measured]. The ball itself is
+the reference, and no labels are involved.
 
 **Kick-offs.** The first kick from within 5 m of the centre spot after both teams have stood in
 their own halves for 2 s. Everything in the half before it is dead.
@@ -98,7 +105,7 @@ touch the dead mask.
 
 **Label-free checks** [measured]: 55 of the 59 tagged set pieces overlap a detected stoppage (the
 remaining ones include the opening kick-off, which is the start of the graded block). The dead
-share of graded frames is 47.7%, which is plausible for LaLiga, whose effective playing time is
+share of graded frames is 46.9%, which is plausible for LaLiga, whose effective playing time is
 commonly reported near 52–55 minutes per match.
 
 ## 4. Control
@@ -121,18 +128,18 @@ frames after the receiver reaches it. We use track slots only to read the team.
 
 | variant | rule | possessions (full match) | mean length | public macroF1 | public spellF1 [95% CI] |
 |---|---|---|---|---|---|
-| C1 | nearest player within 2 m, 10-frame dwell | 412 | 8.1 s | 0.842 | 0.442 [0.295, 0.579] |
-| C2 | C1 + contest test + hysteresis | 437 | 7.6 s | 0.850 | 0.508 [0.368, 0.649] |
-| **C3** | C2 + ball moves with the player | **299** | **11.1 s** | 0.854 | 0.506 [0.353, 0.659] |
+| C1 | nearest player within 2 m, 10-frame dwell | 415 | 8.1 s | 0.842 | 0.442 [0.295, 0.579] |
+| C2 | C1 + contest test + hysteresis | 440 | 7.7 s | 0.850 | 0.508 [0.368, 0.649] |
+| **C3** | C2 + ball moves with the player | **302** | **11.2 s** | 0.853 | 0.506 [0.353, 0.659] |
 
 On the public window the variants are indistinguishable (the bootstrap intervals are 0.3 wide).
 We chose C3 on two other grounds. First, it implements the challenge's own "not control" cases (a
 touch without control, a deflection that does not intercept). Second, its possession rate is closer
 to what the public truth implies once the dead share is accounted for. The public window has 3.4
-possessions per minute with 80% of its frames live. At our full-match live share of 52.3%, that
-scales to about 2.2 possessions per minute [derived]; C3 gives 2.8 and C2 4.1.
+possessions per minute with 80% of its frames live. At our full-match live share of 53.1%, that
+scales to about 2.3 possessions per minute [derived]; C3 gives 2.9 and C2 4.2.
 
-Where C2 and C3 disagree (11.4% of the frames both call live) the cause is almost always a short run that C2
+Where C2 and C3 disagree (11.6% of the frames both call live) the cause is almost always a short run that C2
 accepts and C3 rejects [measured, full match]:
 
 | frames | C2 | C3 | why |
@@ -149,9 +156,9 @@ full-match possession count moves from 290 to 507 and depends mostly on the entr
 larger radius accepts more balls passing near an opponent. We did not pick a cell by public score;
 the defaults are the values we wrote down before running anything.
 
-**Why the control detector abstains**, share of live graded frames (C3): control 30.0%, ball
-missing 13.4%, nobody within 2 m (a pass in flight or a loose ball) 39.9%, contested 2.5%, ball not
-moving with the player 12.8%, run shorter than the dwell 1.3%. Abstaining is not a problem in
+**Why the control detector abstains**, share of live graded frames (C3): control 29.8%, ball
+missing 14.1%, nobody within 2 m (a pass in flight or a loose ball) 39.6%, contested 2.5%, ball not
+moving with the player 12.6%, run shorter than the dwell 1.3%. Abstaining is not a problem in
 itself, because the last owner keeps the ball.
 
 ## 5. State machine
@@ -164,8 +171,8 @@ itself, because the last owner keeps the ball.
 4. After a stoppage, the owner from the restart frame is the restarting team: the team of the
    player nearest the ball (within 3 m) around the restart kick. If the ball is not visible there,
    the team on the corner, free-kick or goal-kick tag is used. If neither is available, the team of
-   the first control run is back-filled to the restart frame. On the 11 tagged restarts where we
-   have both, our own estimate agrees with the tag on 10.
+   the first control run is back-filled to the restart frame. On the 13 tagged restarts where we
+   have both, our own estimate agrees with the tag on 11.
 5. The owner resets at each half. Frames outside the graded halves are `X`.
 6. A possession shorter than 1 s is merged into its neighbours only when both neighbours are the
    same team in the same live stretch. It is never merged across a dead ball, so `H D H` stays two
@@ -186,7 +193,8 @@ a time.
 | v1_C2 | dead ball + C2 + state machine | 0.8502 | 0.5081 | 431 | 46.0% |
 | v1_C3 | C3 control | 0.8539 | 0.5059 | 297 | 46.0% |
 | v2 | second-half pre-kickoff dead | 0.8539 | 0.5059 | 293 | 47.5% |
-| v3 (submitted) | Smart Tagging prior and restart teams | 0.8539 | 0.5059 | 299 | 47.7% |
+| v3 | Smart Tagging prior and restart teams | 0.8539 | 0.5059 | 299 | 47.7% |
+| v4 (submitted) | self-calibrated edges where no event is visible | 0.8533 | 0.5059 | 302 | 46.9% |
 
 These are public-window numbers on 17 possessions, and the organisers measured that one missed
 possession moves spellF1 by about six points. They show the pipeline is aligned and the labels mean
@@ -209,16 +217,16 @@ did not change anything to remove them:
 
 **Not done:**
 - We did not estimate the ball position from player movement during gaps. Gaps in live play are
-  rare (13% of live frames), and only 2 of 84 such gaps longer than 1 s end with the other team in
+  rare (14% of live frames), and only 2 of 84 such gaps longer than 1 s end with the other team in
   control.
 - We did not use the video in any way.
 - We did not tune on the public window.
 
 ## 7. Limitations
 
-- **Blind restarts.** 83 of 139 restarts have no visible kick, so the restart is placed 0.5 s
-  before the players speed up. That offset is assumed, not measured. A late or early restart moves
-  the start of the next possession.
+- **Blind restarts.** 83 of 139 restarts have no visible kick. They are placed with the median
+  kick-to-activity lag from the visible ones, but that lag varies (interquartile range about
+  -0.7 to +1.2 s), and a late or early restart moves the start of the next possession.
 - **Onset timing** depends on which event comes first. When players slow before the whistle (an
   advantage being played, or a slow attack stopped by a foul), the deceleration onset fires early.
 - **The ATD ball near the touchline** sits about 1.5 m inside, so "out" uses a 1 m margin beyond
