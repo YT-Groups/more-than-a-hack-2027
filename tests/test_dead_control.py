@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from yt import control, dead  # noqa: E402
+from yt import control, dead, reception  # noqa: E402
 from yt.features import Features, runs  # noqa: E402
 
 FPS = 25
@@ -90,6 +90,28 @@ class TestConfirm(unittest.TestCase):
         prox = np.array([0, 1, 1, 1, 1, 0], np.int8)
         self.assertEqual(list(control.backdate(ctrl, prox)), [0, 1, 1, 1, 1, 0])
 
+    def test_short_handover_fragment_is_removed(self):
+        ctrl = np.array([1] * 20 + [-1] * 7 + [1] * 20, np.int8)
+        self.assertEqual(list(control.stabilize_handoffs(ctrl, 10)),
+                         [1] * 20 + [0] * 7 + [1] * 20)
+
+
+class TestRestartTeamEvidence(unittest.TestCase):
+    def test_confident_home_nearest_team_is_inferred(self):
+        n = 80
+        f = features(n, np.ones(n, float))
+        f.d_home[:] = 1.0
+        f.d_away[:] = 4.0
+        out = dead.restart_teams(f, [(5, 40, 0, "kick")], before=10, after=10, radius=3.0)
+        self.assertEqual(out, {40: 1})
+
+    def test_tied_team_distance_is_not_inferred(self):
+        n = 80
+        f = features(n, np.ones(n, float))
+        f.d_home[:] = 1.0
+        f.d_away[:] = 1.0
+        out = dead.restart_teams(f, [(5, 40, 0, "kick")], before=10, after=10, radius=3.0)
+        self.assertEqual(out, {})
 
 if __name__ == "__main__":
     unittest.main()

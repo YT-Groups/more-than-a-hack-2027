@@ -151,12 +151,32 @@ def backdate(ctrl: np.ndarray, proximity: np.ndarray) -> np.ndarray:
     return out
 
 
+def stabilize_handoffs(ctrl: np.ndarray, min_frames: int = 10) -> np.ndarray:
+    """Remove short opponent control fragments before they become possession switches.
+
+    Backdating can extend a confirmed run leftward into the proximity run that preceded it.
+    Those boundary frames are useful once confirmed control exists, but an opponent run shorter
+    than a frame of stable evidence must not create a handover.  Runs of at least min_frames are
+    left unchanged.
+    """
+    out = np.asarray(ctrl, dtype=np.int8).copy()
+    if min_frames < 1:
+        raise ValueError("min_frames must be positive")
+    for team in (HOME, -HOME):
+        s, e = runs(out == team)
+        for a, b in zip(s, e):
+            if b - a < min_frames:
+                out[a:b] = 0
+    return out
+
+
 def detect(m: Match, f: Features, cfg: ControlConfig = ControlConfig(), **kw) -> ControlResult:
     cand, dn, reason = candidates(m, f, cfg, **kw)
     ctrl = confirm(cand, cfg.dwell)
     if cfg.variant == "C3":
         prox, _, _ = candidates(m, f, dataclasses.replace(cfg, variant="C2"))
         ctrl = backdate(ctrl, prox)
+    ctrl = stabilize_handoffs(ctrl, cfg.dwell)
     reason = reason.copy()
     reason[(cand != 0) & (ctrl == 0)] = 4
     conf = np.where(ctrl != 0, np.clip(1.0 - dn / max(cfg.r_out, 1e-9), 0.0, 1.0), 0.0)

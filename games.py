@@ -23,6 +23,7 @@ not an error here.
 """
 
 import os
+import glob
 
 GAME = "BAR-ATH"
 
@@ -130,8 +131,14 @@ def asset_paths(game=GAME, data_dir=None, source=DEFAULT_SOURCE):
     root = data_dir or DATA_DIR
     entry = _source(game, source)
     folder = os.path.join(root, source)
-    return {name: os.path.join(folder, entry["stem"] + SUFFIXES[name])
-            for name in entry["assets"]}
+    paths = {name: os.path.join(folder, entry["stem"] + SUFFIXES[name])
+             for name in entry["assets"]}
+    video = paths.get("video")
+    if video is not None and not os.path.isfile(video):
+        matches = sorted(glob.glob(os.path.join(folder, entry["stem"] + "-*.mp4")))
+        if len(matches) == 1:
+            paths["video"] = matches[0]
+    return paths
 
 
 def _source(game, source):

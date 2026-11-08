@@ -27,20 +27,31 @@ def _live_segments(dead: np.ndarray, lo: int, hi: int) -> list[tuple[int, int]]:
     return [(lo + a, lo + b) for a, b in zip(s, e)]
 
 
-def _fill_segment(ctrl: np.ndarray, a: int, b: int, start_owner: int) -> np.ndarray:
+def _fill_segment(ctrl: np.ndarray, a: int, b: int, start_owner: int,
+                  receptions: dict | None = None) -> np.ndarray:
     """Owner per frame for one live stretch, given who owns it at frame a (0 = unknown)."""
     seg = ctrl[a:b]
     owner = np.zeros(b - a, dtype=np.int8)
-    # run starts of confirmed control
-    change = np.flatnonzero((seg != 0) & (np.r_[0, seg[:-1]] != seg))
+    control_change = np.flatnonzero((seg != 0) & (np.r_[0, seg[:-1]] != seg))
+    change = control_change
+    reception_change = []
+    receptions = receptions or {}
+    for frame, team in receptions.items():
+        if a <= int(frame) < b and team != 0:
+            reception_change.append((int(frame) - a, int(team)))
     cur = start_owner
     if cur == 0 and change.size:
         cur = int(seg[change[0]])  # back-fill to the restart
+    if cur == 0 and reception_change:
+        cur = reception_change[0][1]
     last = 0
-    for c in change:
+    boundaries = sorted(set([(int(c), int(seg[c]) if c < len(seg) and seg[c] != 0 else 0)
+                             for c in change] + reception_change))
+    for c, event_team in boundaries:
         owner[last:c] = cur
-        if seg[c] != cur:
-            cur = int(seg[c])
+        next_team = event_team if event_team != 0 else int(seg[c])
+        if next_team != cur:
+            cur = next_team
         last = c
     owner[last:] = cur
     return owner
@@ -65,7 +76,8 @@ def _merge_short(owner: np.ndarray, min_len: int) -> np.ndarray:
 
 
 def label(ctrl: np.ndarray, dead: np.ndarray, graded: np.ndarray, half: np.ndarray,
-          restart_team: dict | None = None, min_len: int = 25) -> np.ndarray:
+          restart_team: dict | None = None, min_len: int = 25,
+          receptions: dict | None = None) -> np.ndarray:
     """Per-frame labels as a numpy array of single characters."""
     n = len(ctrl)
     restart_team = restart_team or {}
@@ -75,7 +87,7 @@ def label(ctrl: np.ndarray, dead: np.ndarray, graded: np.ndarray, half: np.ndarr
         owner = 0
         for a, b in _live_segments(dead, lo, hi):
             start = int(restart_team.get(a, 0))
-            seg_owner = _fill_segment(ctrl, a, b, start)
+            seg_owner = _fill_segment(ctrl, a, b, start, receptions)
             if not seg_owner.any() and owner:
                 seg_owner[:] = owner  # nothing seen: keep the last owner
             seg_owner = _merge_short(seg_owner, min_len)

@@ -18,7 +18,7 @@ import warnings
 
 import numpy as np
 
-from yt import control, dead, evalkit, features, machine, tags
+from yt import control, dead, evalkit, evidence, features, machine, reception, tags
 from yt.load import ROOT, load_match
 
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -31,6 +31,8 @@ class PipelineConfig:
     min_len: int = 25
     use_restart_team: bool = True
     use_tags: bool = True
+    use_receptions: bool = False
+    reception: reception.ReceptionConfig = reception.ReceptionConfig()
 
 
 def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.ndarray, dict]:
@@ -44,12 +46,34 @@ def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.nd
     prior = tags.prior_mask(events, m.n) if cfg.use_tags else None
     d = dead.detect(f, m.graded, cfg.dead, kickoffs=kickoffs, prior=prior)
     c = control.detect(m, f, cfg.control)
+    receptions = {}
+    if cfg.use_receptions:
+        receptions_result = reception.detect(m, f, c.ctrl, d.dead, cfg.reception)
+        receptions = receptions_result.handover
     rt = dead.restart_teams(f, d.segments) if cfg.use_restart_team else {}
     if cfg.use_restart_team and cfg.use_tags:
         rt = tags.fill_restart_teams(rt, d.segments, tags.team_hints(events))
+    dynamic_restarts = {}
+    for onset, restart, _, _ in d.segments:
+        if restart == onset:
+            continue
+        frame, confidence, detail = evidence.dynamic_restart_alignment(m, f, restart)
+        dynamic_restarts[int(restart)] = {
+            "frame": frame,
+            "confidence": confidence,
+            **detail,
+        }
     labels = machine.label(c.ctrl, d.dead, m.graded, m.half, restart_team=rt,
-                           min_len=cfg.min_len)
-    return labels, {"match": m, "features": f, "dead": d, "control": c, "restart_team": rt}
+                           min_len=cfg.min_len, receptions=receptions)
+    return labels, {
+        "match": m,
+        "features": f,
+        "dead": d,
+        "control": c,
+        "restart_team": rt,
+        "dynamic_restarts": dynamic_restarts,
+        "receptions": receptions_result if cfg.use_receptions else reception.ReceptionResult({}, {}, []),
+    }
 
 
 def write_csv(path: str, labels: np.ndarray) -> None:
@@ -72,6 +96,15 @@ def main() -> None:
     ap.add_argument("--min-len", type=int, help="minimum possession length override")
     ap.add_argument("--no-restart-team", action="store_true")
     ap.add_argument("--no-tags", action="store_true", help="ignore Smart Tagging")
+    ap.add_argument("--receptions", action="store_true",
+                    help="enable confirmed pass-reception ownership evidence")
+    ap.add_argument("--reception-dwell", type=int)
+    ap.add_argument("--reception-radius", type=float)
+    ap.add_argument("--reception-margin", type=float)
+    ap.add_argument("--no-reception-control", action="store_true")
+    ap.add_argument("--audit-receptions", action="store_true")
+    ap.add_argument("--audit-architecture", action="store_true",
+                    help="print dynamic restart evidence and proxy architecture summary")
     ap.add_argument("--no-cache", action="store_true",
                     help="parse the raw ATD instead of reading data/cache")
     args = ap.parse_args()
@@ -86,7 +119,36 @@ def main() -> None:
         cfg = dataclasses.replace(cfg, use_restart_team=False)
     if args.no_tags:
         cfg = dataclasses.replace(cfg, use_tags=False)
-    labels, _ = build(cfg, m=load_match(use_cache=not args.no_cache))
+    if args.receptions:
+        cfg = dataclasses.replace(cfg, use_receptions=True)
+    rcfg = cfg.reception
+    if args.reception_dwell is not None:
+        rcfg = dataclasses.replace(rcfg, receiver_dwell=args.reception_dwell)
+    if args.reception_radius is not None:
+        rcfg = dataclasses.replace(rcfg, receiver_radius=args.reception_radius)
+    if args.reception_margin is not None:
+        rcfg = dataclasses.replace(rcfg, team_margin=args.reception_margin)
+    if args.no_reception_control:
+        rcfg = dataclasses.replace(rcfg, require_control=False)
+    cfg = dataclasses.replace(cfg, reception=rcfg, use_receptions=(
+        cfg.use_receptions or args.audit_receptions or args.reception_dwell is not None
+        or args.reception_radius is not None or args.reception_margin is not None
+        or args.no_reception_control))
+    labels, result = build(cfg, m=load_match(use_cache=not args.no_cache))
+    if args.audit_receptions:
+        print("reception audit", json.dumps(result["receptions"].counts, sort_keys=True))
+    if args.audit_architecture:
+        dynamic = result["dynamic_restarts"]
+        confidences = np.asarray([v["confidence"] for v in dynamic.values()], dtype=float)
+        frames = np.asarray([
+            v["frame"] - restart for restart, v in dynamic.items()
+            if v["frame"] is not None
+        ], dtype=float)
+        print("architecture dynamic restart audit count {}".format(len(dynamic)))
+        print("  median confidence {:.4f}".format(
+            float(np.median(confidences)) if confidences.size else 0.0))
+        print("  median edge displacement {} frames".format(
+            int(np.median(frames)) if frames.size else 0))
     write_csv(args.out, labels)
     print("wrote", args.out)
 

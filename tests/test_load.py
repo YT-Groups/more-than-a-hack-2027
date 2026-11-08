@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import tempfile
 
 import numpy as np
 
@@ -9,6 +10,30 @@ from games import asset_paths  # noqa: E402
 from yt import load  # noqa: E402
 
 HAVE_DATA = os.path.isfile(asset_paths()["atd_raw"])
+
+class TestAssetPaths(unittest.TestCase):
+    def test_packaged_video_variant_is_resolved(self):
+        with tempfile.TemporaryDirectory() as root:
+            tactical = os.path.join(root, "tactical")
+            os.makedirs(tactical)
+            variant = os.path.join(tactical, "BAR-ATH_tactical-001.mp4")
+            with open(variant, "wb"):
+                pass
+            resolved = asset_paths(data_dir=root)["video"]
+            self.assertEqual(resolved, variant)
+
+    def test_video_variant_is_not_used_when_exact_name_exists(self):
+        with tempfile.TemporaryDirectory() as root:
+            tactical = os.path.join(root, "tactical")
+            os.makedirs(tactical)
+            exact = os.path.join(tactical, "BAR-ATH_tactical.mp4")
+            variant = os.path.join(tactical, "BAR-ATH_tactical-001.mp4")
+            with open(exact, "wb"):
+                pass
+            with open(variant, "wb"):
+                pass
+            resolved = asset_paths(data_dir=root)["video"]
+            self.assertEqual(resolved, exact)
 
 
 class TestParse(unittest.TestCase):

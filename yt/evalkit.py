@@ -60,6 +60,12 @@ def proxies(labels: np.ndarray, graded: np.ndarray) -> dict:
     lengths = np.array([b - a for _, a, b in sp]) / FPS if sp else np.zeros(0)
     alive = np.isin(g, ["H", "A"])
     minutes = graded.sum() / FPS / 60
+    from games import half_video_blocks
+    from yt.sanity import dead_runs_per_half
+
+    half_runs = dead_runs_per_half(labels, half_video_blocks("BAR-ATH"))
+    runs = [(a, b, half) for half, items in half_runs.items() for a, b in items]
+    stretch_lengths = np.array([(b - a) / FPS for a, b, _ in runs])
     return {
         "dead_share": float(np.mean(g == "D")),
         "x_share": float(np.mean(g == "X")),
@@ -67,8 +73,16 @@ def proxies(labels: np.ndarray, graded: np.ndarray) -> dict:
         "possessions_per_min": len(sp) / minutes,
         "mean_possession_s": float(lengths.mean()) if len(lengths) else 0.0,
         "median_possession_s": float(np.median(lengths)) if len(lengths) else 0.0,
+        "possession_p10_s": float(np.percentile(lengths, 10)) if lengths.size else 0.0,
+        "possession_p50_s": float(np.percentile(lengths, 50)) if lengths.size else 0.0,
+        "possession_p90_s": float(np.percentile(lengths, 90)) if lengths.size else 0.0,
+        "possession_p95_s": float(np.percentile(lengths, 95)) if lengths.size else 0.0,
         "share_under_1s": float(np.mean(lengths < 1)) if len(lengths) else 0.0,
         "home_share_in_play": float(np.mean(g[alive] == "H")) if alive.any() else 0.0,
+        "dead_stretch_count": len(runs),
+        "dead_stretch_under_2s": int(np.sum(stretch_lengths < 2.0)) if stretch_lengths.size else 0,
+        "dead_stretch_over_60s": int(np.sum(stretch_lengths > 60.0)) if stretch_lengths.size else 0,
+        "dead_stretch_median_s": float(np.median(stretch_lengths)) if stretch_lengths.size else 0.0,
     }
 
 

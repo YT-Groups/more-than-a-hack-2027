@@ -201,11 +201,12 @@ def kickoff_frame(m: Match, f: Features, lo: int, hi: int, half: int,
 
 def restart_teams(f: Features, segments: list, before: int = FPS // 2, after: int = FPS // 4,
                   radius: float = 3.0) -> dict:
-    """Restart frame -> team of the taker (+1/-1), where the ball is visible near the restart.
+    """Restart frame -> team of the taker (+1/-1), using confidence-weighted tracking evidence.
 
-    The taker is the team whose nearest player is closer to the ball, within `radius`, over
-    [restart - before, restart + after]. Majority over visible frames; ties and no evidence
-    give no entry.
+    Every frame votes for the nearer team, weighted by the separation between its two nearest
+    players. Frames tied or with weak separation are excluded, as are frames where the ball is
+    not close enough to any player. Majority is only accepted when one team has at least 60% of
+    the weighted evidence.
     """
     out = {}
     for _, restart, _, why in segments:
@@ -216,9 +217,20 @@ def restart_teams(f: Features, segments: list, before: int = FPS // 2, after: in
         ok = f.ball_vis[a:b] & (np.fmin(dh, da) <= radius)
         if not ok.any():
             continue
-        vote = np.sign(np.where(dh[ok] < da[ok], 1, -1).sum())
-        if vote:
-            out[int(restart)] = int(vote)
+        margin = da[ok] - dh[ok]
+        distance = np.fmin(dh[ok], da[ok])
+        confidence = np.clip((radius - distance) / radius, 0.0, 1.0)
+        confidence *= np.clip(np.abs(margin) / radius, 0.0, 1.0)
+        votes = np.where(margin > 0, confidence, np.where(margin < 0, -confidence, 0.0))
+        total = np.abs(votes).sum()
+        if total <= 1e-9:
+            continue
+        home_share = np.clip(votes[votes > 0].sum() / total, 0.0, 1.0) if np.any(votes > 0) else 0.0
+        away_share = np.clip(-votes[votes < 0].sum() / total, 0.0, 1.0) if np.any(votes < 0) else 0.0
+        if home_share >= 0.60 and home_share > away_share:
+            out[int(restart)] = HOME
+        elif away_share >= 0.60 and away_share > home_share:
+            out[int(restart)] = -HOME
     return out
 
 

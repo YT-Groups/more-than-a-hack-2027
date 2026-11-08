@@ -56,6 +56,20 @@ class TestMachine(unittest.TestCase):
         out = run(ctrl, dead)
         self.assertEqual(out[30:50], "A" * 20)
 
+    def test_confirmed_reception_changes_owner_at_event_frame(self):
+        ctrl = np.array([1] * 20 + [0] * 10 + [-1] * 20, dtype=np.int8)
+        out = machine.label(
+            ctrl,
+            np.zeros(50, dtype=bool),
+            np.ones(50, dtype=bool),
+            np.ones(50, dtype=np.int8),
+            min_len=5,
+            receptions={30: -1},
+        )
+        self.assertEqual("".join(out[20:30]), "H" * 10)
+        self.assertEqual("".join(out[30:50]), "A" * 20)
+
+
     def test_restart_team_wins_over_later_control(self):
         ctrl = [1] * 20 + [0] * 10 + [0] * 8 + [-1] * 12
         dead = [0] * 20 + [1] * 10 + [0] * 20

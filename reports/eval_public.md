@@ -13,7 +13,7 @@ python evaluation/run_evaluation.py --results <folder with YT.csv and the baseli
 
 | submission | macroF1 | spellF1 | spellF1 5–95% | possessions (truth 17) | mean length (truth 14.2 s) |
 |---|---|---|---|---|---|
-| **YT** | **0.8533** | **0.5059** | 0.353–0.659 | 17 | 13.9 s |
+| **YT** | **0.8533** | **0.5059** | 0.3529–0.6588 | 17 | 13.9 s |
 | baseline_smooth125 | 0.5812 | 0.4242 | 0.267–0.594 | 16 | 18.5 s |
 | baseline_smooth50 (published floor) | 0.6207 | 0.3256 | 0.214–0.447 | 26 | 10.8 s |
 | baseline_smooth25 | 0.6200 | 0.2868 | 0.196–0.385 | 36 | 7.6 s |
@@ -67,8 +67,164 @@ detection. Such a change has to be justified by reasoning, because this window c
 ## Full-match checks (no labels)
 
 From `python run_pipeline.py`: 302 possessions (2.85 per minute), mean 11.2 s, median 7.7 s,
-6.0% shorter than 1 s, 46.9% of graded frames dead, home share in play 58.9%, no X on graded
+5.96% shorter than 1 s, 46.90% of graded frames dead, home share in play 58.93%, no X on graded
 frames. Version history is in `reports/ablation.csv`.
+
+## Conservative reception experiment
+
+An optional pass-reception detector now produces ownership changes only after visible ball flight,
+same-team passer evidence, stable receiver proximity, opponent separation, and confirmed control.
+It is available with:
+
+```bash
+python run_pipeline.py --out YT.csv --receptions
+```
+
+On the real match, this conservative implementation found 445 candidate events and 422 unique
+handover frames. Compared with the baseline submission it changed only 41 live-frame labels; the
+public result changed from Macro-F1 0.8533 / Spell-F1 0.5059 to 0.8538 / 0.5059, while preserving
+17 predicted possessions and the 302-possession full-match proxy count.
+
+This is a small, unconfirmed frame-level improvement: the 0.0005 Macro-F1 difference is below the
+repository's 0.01 segment-level noise floor and Spell-F1 did not change. The detector therefore
+remains opt-in and is not evidence that private-match possession boundaries improve. It provides
+the next measurable boundary research direction, with synthetic tests for stable receptions and
+opponent contests, but requires broader public/private replay validation before becoming default.
+
+### 41-frame audit
+
+The conservative reception candidate changes 41 frames grouped into 21 two-frame runs. In the
+public graded window, 4 of those frames correct baseline ownership errors and 0 regress it:
+
+| frame | public truth | baseline | reception |
+|---|---|---|---|
+| 12475 | H | A | H |
+| 12476 | H | A | H |
+| 12702 | A | H | A |
+| 12703 | A | H | A |
+
+These are valid pass-position corrections, not public-screen false positives. The rest of the
+41-frame effect lies outside the public window, where ground truth is not available.
+
+### Layer 3 relaxation audit
+
+The default real-match counts separate the candidate stages as follows:
+
+| stage | count |
+|---|---:|
+| visible fast-ball flights | 1172 |
+| flights with passer-team evidence | 925 |
+| events rejected by dead-ball overlap | 173 |
+| events rejected by unstable proximity or opponent contest | 232 |
+| events rejected by control-consistency below 80% | 89 |
+| final events before duplicate handover frames are removed | 445 |
+| unique handover frames | 422 |
+
+Relaxing the 10-frame receiver dwell to 3 frames adds only 9 final events (445 to 454) and leaves
+public scores unchanged at 0.8533 Macro-F1 and 0.5059 Spell-F1. Removing the C3 control-consistency
+layer is dangerous: it raises events to 542, fragmentations to 316 possessions, lowers public
+Macro-F1 to 0.8527, lowers public Spell-F1 to 0.4914, and increases predicted public spells from
+17 to 18. The 422-to-445 true confidence event loss is primarily because the extra candidates are
+contested or C3-inconsistent, not because the original dwell is starving the detector.
+
+## Dead-ball sanity check (no labels)
+
+Generated from `YT.csv` with `python -m yt.sanity YT.csv`. The `frame` column was checked against
+the row index and passed. Dead stretches were found independently per graded half, with exclusive
+end frames.
+
+| summary | result |
+|---|---:|
+| graded frames marked D | 46.90% |
+| dead stretches | 137 |
+| half 1 stretches | 59 |
+| half 2 stretches | 78 |
+| duration 10th percentile | 5.33 s |
+| duration median | 12.24 s |
+| duration 90th percentile | 46.06 s |
+| maximum duration | 185.28 s |
+| stretches under 2 s | 0 |
+| stretches over 60 s | 8 |
+
+The five longest stretches are:
+
+| half | frame range | duration |
+|---|---|---:|
+| H1 | `[57846, 62478)` | 185.28 s |
+| H2 | `[158438, 162615)` | 167.08 s |
+| H1 | `[70096, 73894)` | 151.92 s |
+| H2 | `[110808, 113734)` | 117.04 s (second-half pre-kickoff graded block) |
+| H1 | `[86615, 88499)` | 75.36 s |
+
+The first four ranges are plausible review targets because long stretches at the half boundaries,
+half-time gap, or extended stoppages may be legitimate but should be visually or structurally
+checked when match assets are available. There were no detected stretches below 2 seconds.
+
+Smart Tagging overlap and containment checks are implemented in `yt/sanity.py`, including clipping
+tag windows to match/frame bounds and half-open interval semantics. With the tactical XML now
+present, 59 tag windows were checked; 74 dead stretches overlap a tag window and 63 stretches
+longer than 3 seconds do not overlap any tag window. Because Smart Tagging is inferred rather than
+ground truth, the untagged list is a review queue rather than evidence that a detected stoppage is
+wrong.
+
+Across the 59 windows, 55 set-piece windows contain a detected dead stretch:
+
+| set-piece type | windows containing D |
+|---|---:|
+| Throw-in | 25/26 |
+| Corner Kick | 11/12 |
+| Goal Kick | 9/10 |
+| Free Kick | 5/5 |
+| Kick Off (After Goal) | 4/4 |
+| Kick Off (Start) | 1/2 |
+
+### Restart timing prior and long-stretch review
+
+Restart timing was measured by taking each set-piece window's detected dead stretch whose exclusive
+end falls inside the window, then reporting `dead_end - tag_start`. These are label-free timing
+priors from Smart Tagging, not ground truth.
+
+| set-piece type | single matches | median | p10 | p90 | ambiguous | no match |
+|---|---:|---:|---:|---:|---:|---:|
+| Throw-in | 18 | 7.52 s | 4.85 s | 16.27 s | 6 | 2 |
+| Corner Kick | 9 | 5.56 s | 3.30 s | 7.51 s | 2 | 1 |
+| Goal Kick | 3 | 7.80 s | 7.29 s | 14.10 s | 4 | 3 |
+| Free Kick | 5 | 11.20 s | 3.89 s | 12.75 s | 0 | 0 |
+| Kick Off (After Goal) | 2 | 4.62 s | 4.41 s | 4.83 s | 0 | 2 |
+| Kick Off (Start) | 1 | 2.96 s | 2.96 s | 2.96 s | 0 | 1 |
+
+These statistics use only windows with one dead-end match. Throw-ins, corners, and goal kicks have
+wide or ambiguous distributions, so tags should remain coarse hints rather than exact flip priors.
+Free kicks have complete coverage but still span 8.86 seconds between p10 and p90; they need video
+review before being used as a narrow timing prior. Goal kicks have three misses and four ambiguous
+windows. The kickoff samples are small and their no-match counts should not be interpreted as direct
+detector misses without video review. The after-goal kickoffs median 4.62 seconds from tag start,
+while the tagged second-half kickoff remains 2.96 seconds, showing the conventions differ.
+
+The public ground truth provides direct start- and end-flip checks, independent of tag convention:
+
+| truth D range | detector range | start latency | end latency |
+|---|---|---:|---:|
+| `[12851, 12989)` | `[12831, 13030)` | -20 frames (-0.80 s) | +41 frames (+1.64 s) |
+| `[15889, 16400)` | `[15882, 16400)` | -7 frames (-0.28 s) | 0 frames |
+| `[17380, 17838)` | `[17302, 17873)` | -78 frames (-3.12 s) | +35 frames (+1.40 s) |
+| `[18027, 18389)` | `[18185, 18479)` | +158 frames (+6.32 s) | +90 frames (+3.60 s) |
+
+The restored event-refined detector is not consistently shifted late by about 40 frames. Starts
+range from 78 frames early to 158 frames late, while ends range from exact to 90 frames late.
+
+The eight stretches over 60 seconds were reviewed against overlapping Smart Tagging and goal tags:
+
+| half | frame range | duration | overlapping tags / review |
+|---|---|---:|---|
+| H1 | `[47898, 49740)` | 73.68 s | Barcelona goal and After-Goal kickoff; likely stoppage around the restart |
+| H1 | `[57846, 62478)` | 185.28 s | Athletic goal kickoff and corner; candidate merged event context |
+| H1 | `[70096, 73894)` | 151.92 s | Athletic goal and free kick; candidate extended goal-stoppage context |
+| H1 | `[86615, 88499)` | 75.36 s | No overlapping goal or set-piece tag; candidate for merged live play |
+| H2 | `[110808, 113734)` | 117.04 s | Start-of-second-half kickoff; candidate pre-kickoff/halftime dead block |
+| H2 | `[158438, 162615)` | 167.08 s | Barcelona goal tag; candidate extended goal-stoppage context |
+| H2 | `[175322, 176986)` | 66.56 s | No overlapping goal or set-piece tag; candidate for merged live play |
+| H2 | `[180893, 182446)` | 62.12 s | Athletic goal kick; candidate stoppage/restart context |
 
 ## Full scorer output
 
