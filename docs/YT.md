@@ -105,8 +105,8 @@ touch the dead mask.
 
 **Label-free checks** [measured]: 55 of the 59 tagged set pieces overlap a detected stoppage (the
 remaining ones include the opening kick-off, which is the start of the graded block). The dead
-share of graded frames is 46.9%, which is plausible for LaLiga, whose effective playing time is
-commonly reported near 52–55 minutes per match.
+share of graded frames is 46.9%, which is plausible: LaLiga's effective playing time is
+commonly reported to be low, around 52–55 minutes per match (a public figure we did not verify).
 
 ## 4. Control
 
@@ -126,7 +126,7 @@ frames after the receiver reaches it. We use track slots only to read the team.
 
 **Variants compared** (all with the same dead-ball detector and state machine, submitted settings otherwise):
 
-| variant | rule | possessions (full match) | mean length | public macroF1 | public spellF1 [95% CI] |
+| variant | rule | possessions (full match) | mean length | public macroF1 | public spellF1 [90% bootstrap interval] |
 |---|---|---|---|---|---|
 | C1 | nearest player within 2 m, 10-frame dwell | 415 | 8.1 s | 0.842 | 0.442 [0.295, 0.579] |
 | C2 | C1 + contest test + hysteresis | 440 | 7.7 s | 0.850 | 0.508 [0.368, 0.649] |
@@ -216,6 +216,7 @@ did not change anything to remove them:
   clear kick at 17,873 where we restart.
 
 **Not done:**
+
 - We did not estimate the ball position from player movement during gaps. Gaps in live play are
   rare (14% of live frames), and only 2 of 84 such gaps longer than 1 s end with the other team in
   control.
@@ -227,13 +228,28 @@ did not change anything to remove them:
 - **Blind restarts.** 83 of 139 restarts have no visible kick. They are placed with the median
   kick-to-activity lag from the visible ones, but that lag varies (interquartile range about
   -0.7 to +1.2 s), and a late or early restart moves the start of the next possession.
+  We tried to do better from the players alone, and tested it without labels. On the 52 restarts
+  outside the public window where the kick is visible, we hid the ball and estimated the kick
+  from player movement, fitting each method's offset on one half and testing it on the other
+  [measured]. The current lag rule has a median error of 0.96 s (62% within 1 s). None of the
+  four alternatives beat it once early calls are counted: when activity bottoms out (0.96 s),
+  the steepest acceleration of the players (0.86 s, but 18 early calls over 1 s against 12),
+  the players near the last-seen ball speeding up (1.20 s), or a jump in the share of running
+  players (1.10 s). Neither did a median of three of them (0.96 s; better on 9 restarts, worse
+  on 11). So we kept the lag rule. A restart's timing seems to need the ball, or the video.
 - **Onset timing** depends on which event comes first. When players slow before the whistle (an
   advantage being played, or a slow attack stopped by a foul), the deceleration onset fires early.
 - **The ATD ball near the touchline** sits about 1.5 m inside, so "out" uses a 1 m margin beyond
   the line. Some balls that leave the pitch are never seen to.
 - **Slot teams are trusted.** A tracklet that switches between players of opposite teams would put
-  control on the wrong side; we saw no sign of it in the team counts, but we did not search for it
-  systematically.
+  control on the wrong side. We measured how often the tracking shows signs of this, over the whole
+  match [measured]. Of 3.25 million consecutive slot positions, 83 move more than 2 m in one frame
+  (five times sprint speed) and none move more than 5 m. A home and an away slot stay within 0.5 m
+  of each other for at least 1 s 51 times (1.1% of graded frames), mostly far from the ball (94
+  frames within 3 m of it), which is consistent with tight marking rather than one player tracked
+  twice. Only 4 of our 165 direct possession changes have either sign within 2 s near the ball.
+  The two public-window disagreements in section 6 show neither sign, so the tracking cannot reveal
+  them, and we built no correction for them.
 - **Distances are 2D.** Aerial balls look close to players they fly over. The contest and
   relative-speed tests remove most of them, but not all.
 - **With more time** we would add: (1) team-shape evidence (the team in possession spreads out and

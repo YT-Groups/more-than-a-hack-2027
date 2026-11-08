@@ -11,7 +11,7 @@ python evaluation/run_evaluation.py --results <folder with YT.csv and the baseli
 
 ## Headline
 
-| submission | macroF1 | spellF1 | spellF1 5–95% | possessions (truth 17) | mean length (truth 14.2 s) |
+| submission | macroF1 | spellF1 | spellF1 90% interval (5th–95th pct) | possessions (truth 17) | mean length (truth 14.2 s) |
 |---|---|---|---|---|---|
 | **YT** | **0.8533** | **0.5059** | 0.3529–0.6588 | 17 | 13.9 s |
 | baseline_smooth125 | 0.5812 | 0.4242 | 0.267–0.594 | 16 | 18.5 s |
@@ -54,7 +54,7 @@ python evaluation/run_evaluation.py --results <folder with YT.csv and the baseli
 **What it cannot tell us**
 
 - **Our final rank.** 17 possessions are too few: the scorer itself says gaps under about 0.33
-  spellF1 are within noise here, and our 95% interval is 0.35–0.66.
+  spellF1 are within noise here, and our 90% bootstrap interval (5th–95th percentile) is 0.35–0.66.
 - **How we do on the hard parts of the match.** The ball is visible on 88% of frames in this
   window, against 59% over the full match.
 - **Whether one of our versions beats another.** That is why versions were chosen by reasoning and
