@@ -18,7 +18,7 @@ import warnings
 
 import numpy as np
 
-from yt import control, dead, evalkit, evidence, features, machine, reception, tags
+from yt import control, dead, evalkit, evidence, features, laws, machine, reception, tags, teamfix
 from yt.load import ROOT, load_match
 
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -31,26 +31,53 @@ class PipelineConfig:
     min_len: int = 25
     use_restart_team: bool = True
     use_tags: bool = True
+    # Laws of the Game refinements (yt/laws.py, yt/teamfix.py)
+    use_kickoff_timing: bool = True    # Law 8: restarts at a kick-off pattern move onto the kick
+    use_goal_merge: bool = True        # Laws 8+10: no live play between a goal and its kick-off
+    use_teamfix: bool = True           # Law 8: tracklets in the wrong half at a kick-off
+    use_restart_location: bool = True  # Laws 16-17: goal area / corner arc names the restart team
     use_receptions: bool = False
     reception: reception.ReceptionConfig = reception.ReceptionConfig()
+
+
+def _dead_ball(cfg: "PipelineConfig", m, f, events: list):
+    """Dead-ball result, half-start kick-offs, and the law-based refinements if enabled."""
+    kickoffs = {}
+    for h, (lo, hi) in enumerate(zip(*features.runs(m.graded)), start=1):
+        kickoffs[int(lo)] = dead.kickoff_frame(m, f, int(lo), int(hi), h)
+    prior = tags.prior_mask(events, m.n) if cfg.use_tags else None
+    d = dead.detect(f, m.graded, cfg.dead, kickoffs=kickoffs, prior=prior)
+    if cfg.use_kickoff_timing:
+        d = laws.align_kickoffs(m, f, d)
+    if cfg.use_goal_merge:
+        d = laws.merge_before_kickoffs(d, m.graded)
+    return d, kickoffs
 
 
 def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.ndarray, dict]:
     """Labels for the whole match plus intermediate results for inspection."""
     m = m if m is not None else load_match()
     f = f if f is not None else features.compute(m)
-    kickoffs = {}
-    for h, (lo, hi) in enumerate(zip(*features.runs(m.graded)), start=1):
-        kickoffs[int(lo)] = dead.kickoff_frame(m, f, int(lo), int(hi), h)
     events = tags.load() if cfg.use_tags else []
-    prior = tags.prior_mask(events, m.n) if cfg.use_tags else None
-    d = dead.detect(f, m.graded, cfg.dead, kickoffs=kickoffs, prior=prior)
+    d, kickoffs = _dead_ball(cfg, m, f, events)
+    team_fixes = []
+    if cfg.use_teamfix:
+        # Law 8: at every kick-off each player is in his own half. Tracklets that are not carry
+        # the wrong team label; move them to the other team and rebuild from the features up.
+        ks = sorted({k for k in kickoffs.values() if k is not None} | set(laws.kickoff_frames(d)))
+        team_fixes = teamfix.kickoff_violations(m, ks)
+        if team_fixes:
+            m = teamfix.fix_tracklets(m, team_fixes)
+            f = features.compute(m)
+            d, kickoffs = _dead_ball(cfg, m, f, events)
     c = control.detect(m, f, cfg.control)
     receptions = {}
     if cfg.use_receptions:
         receptions_result = reception.detect(m, f, c.ctrl, d.dead, cfg.reception)
         receptions = receptions_result.handover
     rt = dead.restart_teams(f, d.segments) if cfg.use_restart_team else {}
+    if cfg.use_restart_team and cfg.use_restart_location:
+        rt = laws.restart_team_from_location(m, f, d.segments, rt)
     if cfg.use_restart_team and cfg.use_tags:
         rt = tags.fill_restart_teams(rt, d.segments, tags.team_hints(events))
     dynamic_restarts = {}
@@ -71,6 +98,7 @@ def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.nd
         "dead": d,
         "control": c,
         "restart_team": rt,
+        "team_fixes": team_fixes,
         "dynamic_restarts": dynamic_restarts,
         "receptions": receptions_result if cfg.use_receptions else reception.ReceptionResult({}, {}, []),
     }
@@ -96,6 +124,9 @@ def main() -> None:
     ap.add_argument("--min-len", type=int, help="minimum possession length override")
     ap.add_argument("--no-restart-team", action="store_true")
     ap.add_argument("--no-tags", action="store_true", help="ignore Smart Tagging")
+    ap.add_argument("--no-laws", nargs="*", metavar="RULE",
+                    choices=["kickoff_timing", "goal_merge", "teamfix", "restart_location"],
+                    help="switch off law-based refinements (all if none named)")
     ap.add_argument("--receptions", action="store_true",
                     help="enable confirmed pass-reception ownership evidence")
     ap.add_argument("--reception-dwell", type=int)
@@ -119,6 +150,9 @@ def main() -> None:
         cfg = dataclasses.replace(cfg, use_restart_team=False)
     if args.no_tags:
         cfg = dataclasses.replace(cfg, use_tags=False)
+    if args.no_laws is not None:
+        off = args.no_laws or ["kickoff_timing", "goal_merge", "teamfix", "restart_location"]
+        cfg = dataclasses.replace(cfg, **{"use_" + r: False for r in off})
     if args.receptions:
         cfg = dataclasses.replace(cfg, use_receptions=True)
     rcfg = cfg.reception
