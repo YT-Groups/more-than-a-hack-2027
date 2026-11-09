@@ -201,6 +201,35 @@ possession moves spellF1 by about six points. They show the pipeline is aligned 
 what we think. They are not evidence that one version beats another, and we did not use them that
 way.
 
+**Label-free validation on the full match.** The public window cannot rank versions, so we
+also tested the submitted version on the whole match in three ways that need no labels
+[measured]:
+
+- *Agreement with Smart Tagging phases.* Inside the four possession-phase tags (progression,
+  build-up, attacking transition, creating chances), our team matches the tagged team on 81.6% of
+  57,529 live frames: 82.4% in the first half and 80.9% in the second. A random guess at our home
+  share would score 51.6%, and always guessing Barcelona 69.9%. The tags are automatic and noisy.
+  On the public window even the true labels agree with them only 76.0% of the time, and ours agree
+  75.6%, so against the tags we behave like the truth does. Agreement is lowest in attacking
+  transitions (70%), where a fixed 30 s tag window spans the change of possession. Each defending
+  tag has the same window with the opposite team and gives identical numbers, which confirms that
+  the team on a possession-phase tag is the team with the ball.
+- *First half against second half.* The second half is choppier: 168 possessions against 134
+  (3.2 against 2.5 per minute), a median length of 6.3 s against 8.8 s, 49.2% dead against 44.6%,
+  78 stoppages against 59, and a home share in play of 55.5% against 62.1%. The tracking is equally
+  good in both halves (ball visible on 59.3% of graded frames in each; 84% and 88% of live
+  frames). Tag agreement is also almost the same (82% and 81%). So we read this as the match
+  rather than the model, with one caveat: more of the second half's restarts have no visible kick
+  (50 of 79, against 33 of 61), and those are timed by the calibrated lag.
+- *Hiding parts of the ball tracking.* We hid random 2 s stretches of the visible ball, rebuilt
+  everything and compared with the normal output, over three fixed seeds per level. With 5%, 10%
+  and 20% of the visible ball removed, 0.8–1.2%, 1.4–1.8% and 3.2–4.2% of graded labels change,
+  and the possessions agree with the unhidden ones at spellF1 0.97–0.98, 0.96 and 0.88–0.90. The
+  model degrades gradually, and when it loses the ball it merges possessions (302 falls to 280–300)
+  rather than inventing new ones.
+
+These checks measure consistency and stability, not accuracy, because no labels are involved.
+
 **Disagreements with the public truth** (the organisers asked to hear about them). We list them, and
 did not change anything to remove them:
 
@@ -270,7 +299,7 @@ This builds the file, runs `evaluation/validate_submission.py` on it, and prints
 scores and the full-match proxies. It takes about 20 s, and the first run also caches the parsed
 tracking in `data/cache/`. `scripts/clean_clone_check.sh YT.csv` clones the repository into a
 temporary folder, rebuilds the file from the raw tracking with `--no-cache` and compares SHA-256
-hashes. It passes on the submitted commit. `python -m unittest discover tests` runs 26 unit tests.
+hashes. It passes on the submitted commit. `python -m unittest discover tests` runs 52 unit tests.
 
 Code map: `yt/load.py` (parsing and alignment), `yt/features.py`, `yt/dead.py`, `yt/control.py`,
 `yt/tags.py`, `yt/machine.py`, `yt/evalkit.py` (scoring wrapper, proxies, ablation log),

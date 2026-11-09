@@ -70,6 +70,17 @@ From `python run_pipeline.py`: 302 possessions (2.85 per minute), mean 11.2 s, m
 5.96% shorter than 1 s, 46.90% of graded frames dead, home share in play 58.93%, no X on graded
 frames. Version history is in `reports/ablation.csv`.
 
+## Label-free validation (full match)
+
+Three tests on the submitted version that need no labels. They measure consistency and
+stability, not accuracy. Details are in `docs/YT.md` section 6.
+
+| Test | Result |
+|---|---|
+| Agreement with Smart Tagging possession phases | 81.6% of 57,529 live frames (82.4% / 80.9% by half). Random guess 51.6%, always Barcelona 69.9%. On the public window, the true labels agree 76.0% and ours 75.6% |
+| First half against second half | 134 against 168 possessions; median 8.8 s against 6.3 s; dead 44.6% against 49.2%; 59 against 78 stoppages; home share in play 62.1% against 55.5%. Tracking quality is equal across halves, so this reads as a choppier second half, with more blind restarts (50 of 79 against 33 of 61) |
+| Hiding 5% / 10% / 20% of the visible ball | 0.8–1.2% / 1.4–1.8% / 3.2–4.2% of labels change; possession agreement with the unhidden output (spellF1) 0.97–0.98 / 0.96 / 0.88–0.90; possessions merge (302 to 280–300) rather than split |
+
 ## Conservative reception experiment
 
 An optional pass-reception detector now produces ownership changes only after visible ball flight,

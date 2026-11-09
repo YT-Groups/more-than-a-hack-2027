@@ -15,6 +15,7 @@ import sys
 import numpy as np
 
 from .features import runs
+from .features import runs as runs_of  # `runs` is shadowed inside proxies()
 from .load import FPS, ROOT
 
 sys.path.insert(0, os.path.join(ROOT, "evaluation"))
@@ -60,11 +61,12 @@ def proxies(labels: np.ndarray, graded: np.ndarray) -> dict:
     lengths = np.array([b - a for _, a, b in sp]) / FPS if sp else np.zeros(0)
     alive = np.isin(g, ["H", "A"])
     minutes = graded.sum() / FPS / 60
-    from games import half_video_blocks
-    from yt.sanity import dead_runs_per_half
+    from yt.sanity import find_dead_runs
 
-    half_runs = dead_runs_per_half(labels, half_video_blocks("BAR-ATH"))
-    runs = [(a, b, half) for half, items in half_runs.items() for a, b in items]
+    # dead stretches inside the frames asked about only, one block of `graded` at a time, so a
+    # per-half mask gives per-half numbers (and a stretch never spans the half-time gap)
+    runs = [(a, b, i) for i, (lo, hi) in enumerate(zip(*runs_of(graded)))
+            for a, b in find_dead_runs(labels, int(lo), int(hi))]
     stretch_lengths = np.array([(b - a) / FPS for a, b, _ in runs])
     return {
         "dead_share": float(np.mean(g == "D")),
