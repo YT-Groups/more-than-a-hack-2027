@@ -274,6 +274,12 @@ public window, against 81.65% and 82.03% for v4]:
   model degrades gradually, and when it loses the ball it merges possessions (302 falls to 280–300)
   rather than inventing new ones.
 
+- *Dependence on Smart Tagging team hints* (v8). Re-running with every tag `Team` value blanked
+  (tag times and types kept) leaves the owner at all five kick-offs unchanged, and changes 844
+  graded frames (0.53%) elsewhere. Those are restarts with no visible taker, where a named corner,
+  free-kick or goal-kick tag supplies the team. So ownership comes from the tracking except in that
+  fallback (`scripts/law_checks_v8.py`).
+
 These checks measure consistency and stability, not accuracy, because no labels are involved.
 
 **Disagreements with the public truth** (the organisers asked to hear about them). We list them, and
