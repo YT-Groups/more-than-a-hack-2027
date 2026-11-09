@@ -2,19 +2,20 @@
 
 ## Executive summary
 
-Our current submission is a conservative, stable possession model:
+Our current submission is v8, a conservative possession model with restart refinements grounded
+in the Laws of the Game:
 
-- **302 full-match possessions**
-- **Macro-F1: 0.8533**
-- **Spell-F1: 0.5059**
-- **17 predicted public-window possessions, matching the truth count**
-- **46.90% dead-ball share**
-- **50 unit tests passing**
+- **295 full-match proxy possessions**
+- **Public Macro-F1: 0.8671**
+- **Public Spell-F1: 0.5500**
+- **15 public possessions predicted; 10 match truth at IoU 0.5**
+- **47.04% dead-ball share**
+- **63 unit tests passing**
 - Submission format validation passes
 
-The change from **431 to 302 possessions is a quality improvement because 431 came from a more permissive C2 control detector that produced substantially more fragmented output**. The cleaner C3 pipeline reduced possession fragmentation while preserving or improving public frame-level alignment.
+The progression from **431 C2 possessions to 302 in v4 and 295 in v8** reflects a less fragmented C3 model plus later restart and tracking corrections. The public scores improved from v4 to v8, but the small public sample does not establish a private-match gain.
 
-This is not proof that 302 is the exact private target. It is the strongest defensible result we have from public score, label-free match proxies, and football rules.
+This is not proof that 295 is the exact private target. It is the strongest defensible result we have from public score, label-free match proxies, and football rules.
 
 ## What we changed
 
@@ -123,7 +124,7 @@ We created a targeted audit for corners, free kicks, goal kicks, and kickoffs. I
 - predicted restart team versus truth team;
 - named-team tagging hints versus truth team.
 
-The audit was run on the current `YT.csv` submission and wrote:
+The audit was run on the earlier v4 `YT.csv` submission and wrote:
 
 - [Restart audit results](./reports/restart_audit.csv)
 - [Restart audit script](./scripts/restart_audit.py)
@@ -137,31 +138,97 @@ The audit was run on the current `YT.csv` submission and wrote:
   - predicted restart: frame 18479;
   - latency: **+90 frames / 3.6 seconds**.
 - Initial ownership after the truth restart was correct in **2/2** public matches.
-- The current restart-team evidence mapping was correct in **2/2** public matches.
+- The v4 restart-team evidence mapping was correct in **2/2** public matches.
 - Named-team Smart Tagging hints were correct in **1/2** public matches.
 
-The mismatch sample is too small to support a default pipeline change. In particular, a tag window is coarse and may contain the wrong dead stretch when a tag overlaps multiple events. The current implementation therefore reports whether one match is unambiguous and exports ambiguous evidence without turning it into a model decision.
+The mismatch sample is too small to support a default pipeline change. In particular, a tag window is coarse and may contain the wrong dead stretch when a tag overlaps multiple events. The audit reports ambiguous matches rather than turning them into a model decision.
 
 ### What this means
 
-The public restart audit does not yet show that restart timing is definitively wrong. It shows a consistent +3.6-second predicted-edge delay in only two public examples. It also shows that team evidence agrees on those examples, while named-tag hints are not reliable enough alone.
+The earlier v4 public restart audit does not show that restart timing is definitively wrong. It shows a consistent +3.6-second predicted-edge delay in only two public examples. It also shows that team evidence agrees on those examples, while named-tag hints are not reliable enough alone.
 
 This supports continuing restart research, but not changing production restart logic based on the first audit alone. Any future restart change must improve public edge or transition results and survive label-free match checks, unit tests, and a larger replay audit.
 
-## Scores before and after
+## v8 kick-off and restart audit
+
+A read-only audit of the v8 pipeline, from the tracking and Smart Tagging only, is in the
+[audit report](./reports/law_checks_v8.md) and reproducible with
+[`scripts/law_checks_v8.py`](./scripts/law_checks_v8.py). No ground truth and no human-produced
+data about the match are used.
+
+- **Kick-off owners do not depend on tag team hints.** At all five kick-offs (two half starts,
+  three after goals) the owner and first live frame are the same with every Smart Tagging `Team`
+  value blanked. Elsewhere, blanking them changes 844 graded frames (0.53%): restarts with no
+  visible taker, where a named corner, free-kick or goal-kick tag supplies the team.
+- **The Law 8 side check passes at every kick-off.** Before the tracklet correction, slot 45
+  stands in the wrong half at both half starts; after it, no kick-off has a violation.
+- **Every dead stretch over 60 s looks like a stoppage in the tracking**: players walking (median
+  p90 speed 1.3–1.4 m/s) with the ball mostly unseen, including the two stretches no tag
+  overlaps. The second-half pre-kick-off block is the exception (players warm up with the ball)
+  and is dead by Law 8.
+- `[57846, 62478)` contains a 138.6 s ball gap; the restart type at its end (goal kick, free kick
+  or drop ball) cannot be told from the tracking.
+
+## What changed from v4 to v8, and what drove the score
+
+The latest changes are recorded in [the ablation log](./reports/ablation.csv) and [the public evaluation report](./reports/eval_public.md):
+
+| Version | Change | Public Macro-F1 | Public Spell-F1 | Full-match proxy possessions |
+|---|---|---:|---:|---:|
+| v4 | Calibrated baseline | 0.8533 | 0.5059 | 302 |
+| v5 | Use a gentle first touch to a teammate as restart evidence | 0.8550 | 0.5059 | 302 |
+| v6 | Correct kick-off-illegal tracklet team labels | **0.8671** | **0.5500** | 298 |
+| v7 | Align after-goal restarts to detected kick-offs | 0.8671 | 0.5500 | 298 |
+| v8 | Merge the false live gap before an after-goal kick-off | 0.8671 | 0.5500 | 295 |
+
+The largest measured public-score gain came from the **tracklet team correction**, not the later
+restart-timing rules. Disabling only that correction returned the public score to Macro-F1 0.8550
+and Spell-F1 0.5059. Disabling kick-off timing or the goal-to-kick-off merge left the public scores
+unchanged. Those two rules change full-match labels, but their effect on private-match accuracy is
+unknown.
+
+### What the A-to-H frame ranges mean
+
+In the team-correction ablation, these are **half-open frame ranges** where the no-correction
+candidate labeled the frames `A` and v8 labels them `H`:
+
+| Frames | Length | Interpretation |
+|---|---:|---|
+| `[11704, 11813)` | 109 frames (4.36 s) | Inside the public window; the documented false Athletic spell, corrected to Barcelona |
+| `[114163, 114173)` | 10 frames (0.40 s) | Full-match correction, outside the public window |
+| `[114296, 114349)` | 53 frames (2.12 s) | Full-match correction, outside the public window |
+
+Together these spans account for **172 changed labels**. They are not three separate edits to
+the CSV: they are the observed output differences when the same pipeline is run with the
+tracklet-team fix on versus off. The fix identifies away goalkeeper slot 45 as standing roughly
+46 m into the opponents' half at both half-start kick-offs, contrary to Law 8, and reassigns that
+tracklet to the home team. Recomputing tracking features then changes team-control evidence.
+
+At the two later spans, slot 45 itself is missing from the ball-proximity evidence on the inspected
+frames. Thus those A-to-H changes are **downstream effects of changing that tracklet's team
+membership in the detector**, not proof that the goalkeeper was physically tracking the ball in
+those exact frames. Only the first 109-frame span is in the public scoring window; the other 63
+changed frames are label-free full-match effects and cannot be called correct from public truth.
+
+This distinction matters: the v6 score jump is a real improvement on the public sample, but its
+cause is concentrated in one public possession correction. The later v7/v8 rules are law-based
+structural cleanups, not additional measured public-score gains.
+
+## Earlier score history
 
 | Variant | Macro-F1 | Spell-F1 | Full-match possessions | Assessment |
 |---|---:|---:|---:|---|
 | C2 control | 0.8502 | 0.5081 | 431 | Too fragmented |
 | Initial C3 control | 0.8539 | 0.5059 | 297–299 | Cleaner, but boundary calibration improved it |
-| Calibrated C3 pipeline | 0.8533 | 0.5059 | 302 | Current submission |
+| Calibrated C3 pipeline (v4) | 0.8533 | 0.5059 | 302 | Previous baseline |
+| Laws of the Game refinements (v8) | 0.8671 | 0.5500 | 295 | Current submission |
 
 Important comparison:
 
 - **431 to 302 was not one threshold change and should not be described as a direct A-to-B tuning experiment.**
 - It reflects replacing the more permissive C2 detector and applying the calibrated C3 pipeline.
-- Public possession count remained accurate: both the truth and current submission predicted 17 spells in the public window.
-- The full-match mean possession length increased from approximately 8 seconds under the early C2-style output to approximately 11 seconds under the calibrated pipeline.
+- v4 predicted 17 public spells; v8 predicts 15 against 17 truth possessions, with 10 matched at IoU 0.5.
+- The full-match mean possession length increased from approximately 8 seconds under the early C2-style output to 11.4 seconds in v8.
 
 ## Experiments that did not improve the solution
 
@@ -225,17 +292,18 @@ Public result:
 
 The 0.0005 Macro-F1 change is below the repository's stated segment-level noise floor. Relaxing the 10-frame dwell to 3 frames produced 454 events but no public score change. Removing C3 control consistency raised predicted public fragmentation to 18 possessions and lowered Spell-F1 to 0.4914. The receiver experiment remains opt-in and C3 consistency remains mandatory.
 
-## Why 302 should be considered an improvement
+## Why the current v8 is promising, not proven
 
-### 1. It is much less fragmented
+### 1. It is less fragmented than the early C2 output
 
-431 possessions corresponds to a high number of ownership switches and short spells. The current 302 is substantially more stable while preserving team ownership through loose or uncertain play.
+The progression from 431 C2 possessions to 302 in v4 and 295 in v8 is substantially less
+fragmented. Counts are label-free proxies, not evidence that every deleted possession was false.
 
 ### 2. It is closer to the evidence-backed range
 
 The public truth contains 17 possessions in a five-minute sample. Scaling that rate to 105.9 graded match minutes gives an approximate target of 360 possessions. This is only an extrapolation, but it is more useful than pass arithmetic:
 
-- 302 is below 360
+- 295 is below 360
 - 431 is further outside the plausible range
 - neither public nor pass totals prove an exact private count
 
@@ -252,7 +320,7 @@ The challenge says contested and loose phases retain the last owner, and only co
 1. Possession handovers are too dependent on nearest-player control.
 2. A pass, touch, deflection, rebound, and reception may appear similar in raw tracking.
 3. Restart ownership is often inferred without a visible ball or takes.
-4. Public transition matching is weak:
+4. Public transition matching remains a weakness. The older v4 audit reported:
    - transition F1 at ±12 frames: 0.10
    - transition F1 at ±25 frames: 0.15
 5. The public truth is a small sample:
@@ -290,7 +358,7 @@ For every detected restart:
 - combine tracking evidence with Smart Tagging team hints;
 - keep Smart Tagging timing coarse, not exact.
 
-Current restart-audit status:
+Earlier v4 restart-audit status:
 
 - the audit has been implemented, run, and added to the repository report set;
 - 33 targeted set-piece tags were processed;
@@ -313,13 +381,11 @@ We should not tune toward a guessed final possession number.
 
 | Signal | Current | Meeting target |
 |---|---:|---:|
-| Full-match possessions | 302 | Plausible exploratory range: 300–360 |
-| Mean possession duration | 11.17 seconds | 11–14 seconds |
-| Dead-ball share | 46.90% | Maintain roughly 47% |
-| Home live share | 58.93% | Monitor only |
-| Short possessions under 1 second | 5.96% | Reduce further without deleting real events |
-
-
+| Full-match possessions | 295 | Plausible exploratory range: 300–360 |
+| Mean possession duration | 11.41 seconds | 11–14 seconds |
+| Dead-ball share | 47.04% | Maintain roughly 47% |
+| Home live share | 59.25% | Monitor only |
+| Short possessions under 1 second | 5.42% | Reduce further only with evidence |
 
 ## What counts as a real improvement
 
@@ -335,17 +401,20 @@ A new variant should be kept only when it shows multiple independent gains:
 
 ## Current validation status
 
-- Current production submission: 302 full-match possessions.
-- Public result: Macro-F1 0.8533, Spell-F1 0.5059.
-- Public possession count: 17 predicted, 17 in truth.
-- Dead-ball sanity review: 137 dead stretches, 46.90% dead share, no sub-2-second stretches.
+- Current production submission: v8, 295 full-match proxy possessions.
+- Public result: Macro-F1 0.8671, Spell-F1 0.5500; 15 predicted possessions, 10 matched at IoU 0.5.
+- Dead-ball sanity review: 134 stretches, 47.04% dead share, no sub-2-second stretches.
 - Restart audit: 33 set-piece tags reviewed; public restart evidence limited to two matches.
-- Architectural proxy: dynamic restart audit covered 140 boundaries with median confidence 0.2883
-  and median 1-frame diagnostic displacement.
-- Possession duration proxy: p10 1.37 s, p50 7.70 s, p90 25.80 s, p95 33.04 s.
-- Test status: 50 unit tests passing, including dead runs, overlaps, state-machine behavior,
-  reception controls, dead-ball checks, loading, and restart-audit matching.
+- Kick-off audit: owners at all five kick-offs unchanged without tag team hints; no Law 8 side
+  violation remains after the tracklet correction.
+- Possession duration proxy: p10 1.47 s, p50 7.88 s, p90 26.31 s, p95 33.90 s.
+- Team-fix ablation: disabling it returns public scores to 0.8550 / 0.5059; the other two law
+  refinements did not change public scores in one-at-a-time ablations.
+- Test status: 63 unit tests passing, including the audit helpers in
+  [`tests/test_law_checks_v8.py`](./tests/test_law_checks_v8.py).
+- `YT.csv` is unchanged by the audit (SHA-256 `903CD22327DF7CD37C09042F5E595C326BB8CA5FA2954B282E7DF4377E7669D4`;
+  a Windows checkout made before the `.gitattributes` fix shows `73DE0195…`, the same file with CRLF line endings).
 
 ## One-sentence meeting justification
 
-"We moved from a permissive C2 detector that produced 431 fragmented possessions to a calibrated C3 control model with event-refined boundaries that produces 302 stable possessions, with equal public spell-F1 and an improved public macro-F1."
+"We moved from a permissive C2 detector with 431 fragmented possessions to the v8 C3 pipeline with 295 full-match proxy possessions; the Law 8 tracklet correction improved the public sample, while later restart rules are principled but not independently score-validated."
