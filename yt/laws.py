@@ -8,20 +8,19 @@ match, and is tied to no particular frame. None is fitted to the public window.
   Law 8+10 after a goal, play restarts only with a kick-off; teams celebrate and walk back first,
           which takes far longer than 30 s, so a short "live" gap just before an after-goal
           kick-off is part of the same stoppage (merge_before_kickoffs).
-  Law 16  a goal kick is taken from inside the goal area by the defending team
-          (restart_team_from_location).
-  Law 17  a corner kick is taken from the corner arc by the attacking team (same function).
+
+A third rule was tested and dropped: Laws 16-17 (a ball placed in a goal area or at a corner arc
+names the restarting team). It agreed with the visible taker and the Smart Tagging team on 3 of
+3, but on this match it changed no label, so the simpler pipeline was kept.
 """
 
 from __future__ import annotations
-
-import dataclasses
 
 import numpy as np
 
 from .dead import DeadResult, kickoff_frame
 from .features import Features, runs
-from .load import FPS, HOME, PITCH, Match
+from .load import FPS, Match
 
 
 def _half_of(he: np.ndarray, frame: int) -> int:
@@ -89,46 +88,6 @@ def merge_before_kickoffs(res: DeadResult, graded: np.ndarray, min_goal_to_kicko
                 changed = True
                 break
     return _rebuild_mask(res, graded, segs)
-
-
-def _defends_left(m: Match, team: int, half: int) -> bool:
-    home_left = (m.attack_dir_home_h1 == "left_to_right") == (half == 1)
-    return home_left if team == HOME else not home_left
-
-
-def restart_team_from_location(m: Match, f: Features, segments: list, known: dict,
-                               before: int = FPS) -> dict:
-    """Restart team from where the ball is placed (Laws 16 and 17), for restarts with none.
-
-    The placed position is the median of the ball while nearly still (< 2 m/s) in the second
-    before the restart, needing at least 5 such frames. Goal area (6 m from the goal line plus a
-    1.5 m allowance for the tracker reading the ball inside the lines): the defending team takes
-    a goal kick. Corner (within 3 m of the goal line and 4 m of a touchline): the attacking team
-    takes a corner. Other restarts are left alone. On the restarts where the taker is visible
-    this agreed with the taker on 3 of 3, and with the Smart Tagging team on 3 of 3.
-    """
-    L, W = PITCH
-    hs, he = runs(m.graded)
-    out = dict(known)
-    for _, re, _, why in segments:
-        if why == "half_end" or re in out:
-            continue
-        a = max(0, re - before)
-        v = np.nan_to_num(f.ball_v[a:re + 3], nan=99.0)
-        ok = f.ball_vis[a:re + 3] & (v < 2.0)
-        if ok.sum() < 5:
-            continue
-        x, y = np.nanmedian(m.ball_xy[a:re + 3][ok], axis=0)
-        left_goal = x < L / 2
-        dx = x if left_goal else L - x
-        corner = dx < 3.0 and min(y, W - y) < 4.0
-        goal_area = dx < 6.5 and abs(y - W / 2) < 9.16 + 1.5
-        if not (corner or goal_area):
-            continue
-        h = _half_of(he, re)
-        defending = HOME if _defends_left(m, HOME, h) == left_goal else -HOME
-        out[int(re)] = -defending if corner else defending
-    return out
 
 
 def kickoff_frames(res: DeadResult) -> list[int]:

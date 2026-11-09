@@ -7,8 +7,6 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from yt import laws  # noqa: E402
 from yt.dead import DeadResult  # noqa: E402
-from yt.features import Features  # noqa: E402
-from yt.load import Match, PITCH  # noqa: E402
 
 FPS = 25
 
@@ -43,38 +41,6 @@ class TestMergeBeforeKickoffs(unittest.TestCase):
         r = result([(1000, 1800, "decel", "calibrated"), (2100, 2300, "half_start", "kickoff")])
         out = laws.merge_before_kickoffs(r, np.ones(10000, bool))
         self.assertEqual(len(out.segments), 2)
-
-
-class TestRestartLocation(unittest.TestCase):
-    def scene(self, ball):
-        n = 200
-        L, W = PITCH
-        bxy = np.full((n, 2), np.nan)
-        bxy[60:101] = ball
-        m = Match(ball_xy=bxy, ball_speed=np.full(n, np.nan), players_xy=np.full((n, 0, 2), np.nan),
-                  player_speed=np.zeros((n, 0)), team=np.zeros(0, np.int8), is_gk=np.zeros(0, bool),
-                  graded=np.ones(n, bool), half=np.ones(n, np.int8), attack_dir_home_h1="left_to_right")
-        vis = ~np.isnan(bxy[:, 0])
-        f = Features(activity=np.zeros(n), activity_raw=np.zeros(n), ball_vis=vis,
-                     ball_v=np.where(vis, 0.1, np.nan), ball_out=np.zeros(n), d_home=np.zeros(n),
-                     d_away=np.zeros(n), n_objects=np.zeros(n))
-        return m, f
-
-    def test_goal_area_gives_the_defending_team(self):
-        # home defends the left goal in half 1: a ball in the left goal area is a home goal kick
-        m, f = self.scene([3.0, PITCH[1] / 2])
-        self.assertEqual(laws.restart_team_from_location(m, f, [(0, 100, "x", "kick")], {}), {100: 1})
-
-    def test_corner_gives_the_attacking_team(self):
-        m, f = self.scene([1.0, 1.0])            # left corner: home defends it, away takes it
-        self.assertEqual(laws.restart_team_from_location(m, f, [(0, 100, "x", "kick")], {}), {100: -1})
-
-    def test_known_team_and_midfield_are_left_alone(self):
-        m, f = self.scene([50.0, 30.0])
-        self.assertEqual(laws.restart_team_from_location(m, f, [(0, 100, "x", "kick")], {}), {})
-        m, f = self.scene([3.0, PITCH[1] / 2])
-        self.assertEqual(laws.restart_team_from_location(m, f, [(0, 100, "x", "kick")], {100: -1}),
-                         {100: -1})
 
 
 if __name__ == "__main__":

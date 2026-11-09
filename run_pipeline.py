@@ -35,7 +35,6 @@ class PipelineConfig:
     use_kickoff_timing: bool = True    # Law 8: restarts at a kick-off pattern move onto the kick
     use_goal_merge: bool = True        # Laws 8+10: no live play between a goal and its kick-off
     use_teamfix: bool = True           # Law 8: tracklets in the wrong half at a kick-off
-    use_restart_location: bool = True  # Laws 16-17: goal area / corner arc names the restart team
     use_receptions: bool = False
     reception: reception.ReceptionConfig = reception.ReceptionConfig()
 
@@ -76,8 +75,6 @@ def build(cfg: PipelineConfig = PipelineConfig(), m=None, f=None) -> tuple[np.nd
         receptions_result = reception.detect(m, f, c.ctrl, d.dead, cfg.reception)
         receptions = receptions_result.handover
     rt = dead.restart_teams(f, d.segments) if cfg.use_restart_team else {}
-    if cfg.use_restart_team and cfg.use_restart_location:
-        rt = laws.restart_team_from_location(m, f, d.segments, rt)
     if cfg.use_restart_team and cfg.use_tags:
         rt = tags.fill_restart_teams(rt, d.segments, tags.team_hints(events))
     dynamic_restarts = {}
@@ -125,7 +122,7 @@ def main() -> None:
     ap.add_argument("--no-restart-team", action="store_true")
     ap.add_argument("--no-tags", action="store_true", help="ignore Smart Tagging")
     ap.add_argument("--no-laws", nargs="*", metavar="RULE",
-                    choices=["kickoff_timing", "goal_merge", "teamfix", "restart_location"],
+                    choices=["kickoff_timing", "goal_merge", "teamfix"],
                     help="switch off law-based refinements (all if none named)")
     ap.add_argument("--receptions", action="store_true",
                     help="enable confirmed pass-reception ownership evidence")
@@ -151,7 +148,7 @@ def main() -> None:
     if args.no_tags:
         cfg = dataclasses.replace(cfg, use_tags=False)
     if args.no_laws is not None:
-        off = args.no_laws or ["kickoff_timing", "goal_merge", "teamfix", "restart_location"]
+        off = args.no_laws or ["kickoff_timing", "goal_merge", "teamfix"]
         cfg = dataclasses.replace(cfg, **{"use_" + r: False for r in off})
     if args.receptions:
         cfg = dataclasses.replace(cfg, use_receptions=True)

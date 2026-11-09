@@ -85,7 +85,13 @@ keeps moving between players.
   else the moment the tracker lost the ball, else the peak of player activity in the 5 s before
   the core (the players start to decelerate at the whistle);
 - *restart*: the last "kick" (ball speed from below 2 m/s to above 5 m/s) between 4 s before and
-  2 s after the core ends.
+  2 s after the core ends. That last kick can be a second touch: a short corner or a throw-in
+  reaches a team-mate, who then plays on. So an earlier, gentler first movement (above 2.5 m/s after
+  the ball was still) is taken as the restart instead when the ball goes from one player to a
+  *different* player at least 2 m away and the players speed up by at least 0.5 m/s in the next
+  second. A ball repositioned by the same player, with everyone still walking, fails both tests.
+  This moves 3 of 140 restarts earlier (0.24, 0.40 and 2.08 s; the last is a throw-in that the kick
+  rule had timed at the receiver's touch).
 
 **Self-calibration for edges we cannot see.** When no kick is visible (83 of 139 restarts), or the
 deceleration peak sits at the very start of the search window (activity already falling, 22
@@ -97,6 +103,35 @@ the reference, and no labels are involved.
 **Kick-offs.** The first kick from within 5 m of the centre spot after both teams have stood in
 their own halves for 2 s. Everything in the half before it is dead.
 
+**Laws of the Game.** Three more rules follow directly from the laws, apply to the whole match,
+and are tied to no particular frame [measured effects]:
+
+- *Law 8, kick-off timing.* Every kick-off, including the one after a goal, is taken from the centre
+  mark with both teams in their own halves. Where that pattern appears within 5 s before or 2 s
+  after a detected restart, the restart moves onto the kick. Applied blindly to the whole match,
+  it fires only at the three after-goal kick-offs, each 1.0–2.8 s earlier, and agrees with the
+  Smart Tagging kick-off windows (tag start + 3.5 s) to within 0.5 s. The fourth goal's kick-off
+  shows no clear pattern and is left alone.
+- *Laws 8 and 10, nothing live between a goal and its kick-off.* After a goal, play restarts only
+  with a kick-off, and the celebration and the walk back take far longer than 30 s [assumed
+  minimum]. So when a stoppage shorter than 30 s ends in a mid-half kick-off and follows another
+  stoppage after a live gap under 30 s, the two are one stoppage. This removes two short false
+  "live" spells while players walked back after a goal (75,052–75,366 and 162,615–162,850).
+- *Law 8, team labels.* At a kick-off every player is in his own half, so a tracked slot more than
+  5 m into the opponents' half (outside the centre circle) one second before a kick-off carries the
+  wrong team label for that tracklet. The tracklet is moved to the other team and the features
+  are rebuilt. It flags two tracklets of the away goalkeeper's slot at the two half-start
+  kick-offs; both stand deep in the home half next to the home goalkeeper.
+
+Two related rules were tested and not used. *Opponents of the last toucher restart after the ball
+goes out* (Laws 9 and 15–17) agreed with the visible taker on only 9 of 18 restarts, because the
+tracking cannot see who touched the ball last. *A ball placed in a goal area or at a corner names
+the restarting team* (Laws 16–17) agreed 3 of 3 but changed no label, so the simpler pipeline was
+kept. A broader version of the team-label rule (a goalkeeper slot near the other team's goal
+belongs to the team defending it) was rejected. In every such stretch the real home goalkeeper was
+visible too, so that slot was not following a goalkeeper, even though the rule would have raised
+the public score.
+
 **Smart Tagging as a prior.** Inside a tagged set-piece window, a shorter (1 s) and shallower
 (below 2.5 m/s) dip also counts, but only if the ball is placed (below 0.5 m/s for 0.5 s) and only
 where the base rule found nothing, so the tags can add a quick restart but never stretch or move
@@ -105,7 +140,7 @@ touch the dead mask.
 
 **Label-free checks** [measured]: 55 of the 59 tagged set pieces overlap a detected stoppage (the
 remaining ones include the opening kick-off, which is the start of the graded block). The dead
-share of graded frames is 46.9%, which is plausible: LaLiga's effective playing time is
+share of graded frames is 47.0%, which is plausible: LaLiga's effective playing time is
 commonly reported to be low, around 52–55 minutes per match (a public figure we did not verify).
 
 ## 4. Control
@@ -124,7 +159,7 @@ A confirmed run is stamped from the frame the player first came within range, no
 the relative-speed test first passed, because a ball arriving from a pass is still fast for a few
 frames after the receiver reaches it. We use track slots only to read the team.
 
-**Variants compared** (all with the same dead-ball detector and state machine, submitted settings otherwise):
+**Variants compared** (all with the same dead-ball detector and state machine, v4 settings otherwise):
 
 | variant | rule | possessions (full match) | mean length | public macroF1 | public spellF1 [90% bootstrap interval] |
 |---|---|---|---|---|---|
@@ -194,7 +229,17 @@ a time.
 | v1_C3 | C3 control | 0.8539 | 0.5059 | 297 | 46.0% |
 | v2 | second-half pre-kickoff dead | 0.8539 | 0.5059 | 293 | 47.5% |
 | v3 | Smart Tagging prior and restart teams | 0.8539 | 0.5059 | 299 | 47.7% |
-| v4 (submitted) | self-calibrated edges where no event is visible | 0.8533 | 0.5059 | 302 | 46.9% |
+| v4 | self-calibrated edges where no event is visible | 0.8533 | 0.5059 | 302 | 46.9% |
+| v5 | restart at a first touch to a different player | 0.8550 | 0.5059 | 302 | 46.9% |
+| v6 | Law 8: tracklet team labels at kick-offs | 0.8671 | 0.5500 | 298 | 46.9% |
+| v7 | Law 8: after-goal kick-off timing | 0.8671 | 0.5500 | 298 | 46.8% |
+| v8 (submitted) | Laws 8+10: no live play between a goal and its kick-off | 0.8671 | 0.5500 | 295 | 47.0% |
+
+v6's public gain comes from one corrected tracklet whose 109 changed frames happen to fall inside
+the public window. v7 and v8 do not touch the public window (it contains no goal). Over the full
+match v5–v8 change 777 graded frames (0.49%) and remove 7 false possession changes. On the public
+window v4 matched 10 of the 17 true possessions with 7 false ones; v8 matches the same 10 with 5
+false ones.
 
 These are public-window numbers on 17 possessions, and the organisers measured that one missed
 possession moves spellF1 by about six points. They show the pipeline is aligned and the labels mean
@@ -202,8 +247,9 @@ what we think. They are not evidence that one version beats another, and we did 
 way.
 
 **Label-free validation on the full match.** The public window cannot rank versions, so we
-also tested the submitted version on the whole match in three ways that need no labels
-[measured]:
+also tested the whole match in three ways that need no labels [measured, on v4; v5–v8 change
+0.49% of graded frames, and v8's Smart Tagging agreement is 81.57% overall and 82.14% outside the
+public window, against 81.65% and 82.03% for v4]:
 
 - *Agreement with Smart Tagging phases.* Inside the four possession-phase tags (progression,
   build-up, attacking transition, creating chances), our team matches the tagged team on 81.6% of
@@ -242,7 +288,8 @@ did not change anything to remove them:
 - **17,380.** The truth goes dead at 17,380, about a second after the players had already slowed
   to walking pace. Our onset (17,302) is 3 s early.
 - **17,838.** The truth goes live on what looks like a short corner tap, about 1.4 s before the
-  clear kick at 17,873 where we restart.
+  clear kick at 17,873 where v4 restarted. The first-touch rule now restarts at 17,863, still 1.0 s
+  late: the tap happens while the tracker has lost the ball.
 
 **Not done:**
 
@@ -270,8 +317,9 @@ did not change anything to remove them:
   advantage being played, or a slow attack stopped by a foul), the deceleration onset fires early.
 - **The ATD ball near the touchline** sits about 1.5 m inside, so "out" uses a 1 m margin beyond
   the line. Some balls that leave the pitch are never seen to.
-- **Slot teams are trusted.** A tracklet that switches between players of opposite teams would put
-  control on the wrong side. We measured how often the tracking shows signs of this, over the whole
+- **Slot teams are mostly trusted.** Apart from the kick-off law check (section 3), which corrects
+  two tracklets, a tracklet that switches between players of opposite teams would put control on
+  the wrong side. We measured how often the tracking shows signs of this, over the whole
   match [measured]. Of 3.25 million consecutive slot positions, 83 move more than 2 m in one frame
   (five times sprint speed) and none move more than 5 m. A home and an away slot stay within 0.5 m
   of each other for at least 1 s 51 times (1.1% of graded frames), mostly far from the ball (94
@@ -299,10 +347,12 @@ This builds the file, runs `evaluation/validate_submission.py` on it, and prints
 scores and the full-match proxies. It takes about 20 s, and the first run also caches the parsed
 tracking in `data/cache/`. `scripts/clean_clone_check.sh YT.csv` clones the repository into a
 temporary folder, rebuilds the file from the raw tracking with `--no-cache` and compares SHA-256
-hashes. It passes on the submitted commit. `python -m unittest discover tests` runs 52 unit tests.
+hashes. It passes on the submitted commit. `python -m unittest discover tests` runs 63 unit tests.
 
 Code map: `yt/load.py` (parsing and alignment), `yt/features.py`, `yt/dead.py`, `yt/control.py`,
-`yt/tags.py`, `yt/machine.py`, `yt/evalkit.py` (scoring wrapper, proxies, ablation log),
-`yt/gaps.py` (gap report), `run_pipeline.py`.
+`yt/tags.py`, `yt/laws.py` and `yt/teamfix.py` (Laws of the Game refinements), `yt/machine.py`,
+`yt/evalkit.py` (scoring wrapper, proxies, ablation log), `yt/gaps.py` (gap report),
+`run_pipeline.py`. `python run_pipeline.py --no-laws` switches the law refinements off (all of
+them, or the ones named) to reproduce v5.
 
 **Training data:** none. No labelled data of any kind, from this game or any other, is used.

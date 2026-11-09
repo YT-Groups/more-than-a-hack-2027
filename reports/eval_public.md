@@ -1,8 +1,8 @@
 # Evaluation results (public window)
 
-Commit `923ff77`, file `YT.csv` (SHA-256 `c5141c43a78eecfd267a3b287994c3fc9dbdf3397e87b528982b72889390c36e`).
-Scored with the organisers' scorer against the public 5-minute ground truth (frames 11,185–18,684,
-17 possessions), next to the four shipped baselines:
+File `YT.csv` (v8, SHA-256 `903cd22327df7cd37c09042f5e595c326bb8ca5fa2954b282e7df4377e7669d4`), with the
+previous submission v4 (`c5141c43…`) alongside. Scored with the organisers' scorer against the public
+5-minute ground truth (frames 11,185–18,684, 17 possessions), next to the four shipped baselines:
 
 ```bash
 python run_pipeline.py --out YT.csv
@@ -11,26 +11,36 @@ python evaluation/run_evaluation.py --results <folder with YT.csv and the baseli
 
 ## Headline
 
-| submission | macroF1 | spellF1 | spellF1 90% interval (5th–95th pct) | possessions (truth 17) | mean length (truth 14.2 s) |
+| submission | macroF1 | spellF1 | spellF1 90% interval (5th–95th pct) | possessions predicted / matched at IoU 0.5 (truth 17) | mean length (truth 14.2 s) |
 |---|---|---|---|---|---|
-| **YT** | **0.8533** | **0.5059** | 0.3529–0.6588 | 17 | 13.9 s |
-| baseline_smooth125 | 0.5812 | 0.4242 | 0.267–0.594 | 16 | 18.5 s |
-| baseline_smooth50 (published floor) | 0.6207 | 0.3256 | 0.214–0.447 | 26 | 10.8 s |
-| baseline_smooth25 | 0.6200 | 0.2868 | 0.196–0.385 | 36 | 7.6 s |
-| baseline_raw | 0.5972 | 0.0378 | 0.019–0.060 | 131 | 2.0 s |
+| **YT (v8)** | **0.8671** | **0.5500** | 0.388–0.713 | 15 / 10 | 15.8 s |
+| YT (v4, previous) | 0.8533 | 0.5059 | 0.353–0.659 | 17 / 10 | 13.9 s |
+| baseline_smooth125 | 0.5812 | 0.4242 | 0.267–0.594 | 16 / 7 | 18.5 s |
+| baseline_smooth50 (published floor) | 0.6207 | 0.3256 | 0.214–0.447 | 26 / 7 | 10.8 s |
+| baseline_smooth25 | 0.6200 | 0.2868 | 0.196–0.385 | 36 / 8 | 7.6 s |
+| baseline_raw | 0.5972 | 0.0378 | 0.019–0.060 | 131 / 2 | 2.0 s |
 
-## What the numbers say
+**Predicted is not matched.** v4 predicted 17 possessions, the same as the truth, but only 10 of
+them line up with a true possession (same team, at least 50% overlap); the other 7 were false.
+v8 predicts 15, matches the same 10, and has 5 false. The score rewards matched possessions and
+penalises false ones, so v8 is higher at every overlap threshold (0.3 to 0.7). The two possessions
+that disappeared were mistakes: one was an Athletic possession at frames 11,704–11,813 created by a
+track with the wrong team label (the truth has Barcelona on the ball), which the kick-off law
+correction removes. Most of v8's public gain comes from that one correction landing inside the
+window, so it overstates the gain on the full match.
 
-- **Dead ball is the big win.** D-class F1 is 0.859, against 0.146 to 0.420 for the baselines.
-  Alive/dead F1 is 0.964.
-- **The team in possession is mostly right.** Per-class F1 is H 0.852 and A 0.849. Team accuracy
-  on frames both call live is 0.882. The home share is 0.537, against 0.573 in the truth.
-- **Possessions are found, but their edges are loose.** spellF1 is 0.65 at IoU 0.3 and 0.4, then
-  0.59, 0.41 and 0.24 at 0.5, 0.6 and 0.7. Within ±1 s, only 3 of the 20 true possession changes
-  are matched (transition F1 0.15). This is the main weakness. Part of it is the ATD-versus-truth
-  disagreements listed in `docs/YT.md` section 6. The first three changes of the window, for
-  example, are 5–8 s late because the raw tracking shows the other team on the ball.
-- **No flicker.** Fragmentation is 1.00: 21 predicted segments against 21 true.
+## What the numbers say (v8)
+
+- **Dead ball is the big win.** D-class F1 is 0.862, against 0.146 to 0.420 for the baselines.
+  Alive/dead F1 is 0.965.
+- **The team in possession is mostly right.** Per-class F1 is H 0.871 and A 0.868. Team accuracy
+  on frames both call live is 0.901. The home share is 0.554, against 0.573 in the truth.
+- **Possessions are found, but their edges are loose.** spellF1 is 0.69 at IoU 0.3 and 0.4, then
+  0.63, 0.50 and 0.25 at 0.5, 0.6 and 0.7. Within ±1 s, 4 of the 20 true possession changes are
+  matched (transition F1 0.21). This is the main weakness. Part of it is the ATD-versus-truth
+  disagreements listed in `docs/YT.md` section 6: the first two changes of the window are 5–8 s
+  late because the raw tracking shows the other team on the ball.
+- **No flicker.** 19 predicted segments against 21 true.
 
 ## What this tells us
 
@@ -39,40 +49,47 @@ python evaluation/run_evaluation.py --results <folder with YT.csv and the baseli
 - **The pipeline is aligned.** Frame indexing, home and away, and what each label means are all
   right. An off-by-one or a team swap would have collapsed the scores.
 - **The dead-ball detector works.** It is the largest single gain over the baselines.
-- **We do not flicker.** 17 possessions against 17 true, with almost the same mean length. The
+- **We do not flicker.** 15 possessions predicted against 17 true, 10 of them matched. The
   baselines either invent possessions (26 to 131) or merge them.
 
 **Where it points: the boundaries are a few seconds off**
 
-- spellF1 is 0.65 when a 30% overlap is enough, but only 0.24 at 70%. So we usually find the right
+- spellF1 is 0.69 when a 30% overlap is enough, but only 0.25 at 70%. So we usually find the right
   possession but start or end it a few seconds early or late. The ranking metric averages over all
   five thresholds, so sharper boundaries are where the remaining points are, not more possessions.
 - Part of the error is in the data, not our method. Where the raw tracking shows the other team on
-  the ball (the first three changes of the window), we are late by construction.
-- The rest is our stoppage timing, especially the 83 restarts where the kick is not visible.
+  the ball (the first changes of the window), we are late by construction.
+- The rest is mostly stoppage timing where the kick is not visible, and very short possessions
+  (four of the seven missed ones last under 4 s).
 
 **What it cannot tell us**
 
 - **Our final rank.** 17 possessions are too few: the scorer itself says gaps under about 0.33
-  spellF1 are within noise here, and our 90% bootstrap interval (5th–95th percentile) is 0.35–0.66.
+  spellF1 are within noise here, and our 90% bootstrap interval (5th–95th percentile) is 0.39–0.71.
 - **How we do on the hard parts of the match.** The ball is visible on 88% of frames in this
   window, against 59% over the full match.
 - **Whether one of our versions beats another.** That is why versions were chosen by reasoning and
-  label-free full-match checks, not by this score.
+  label-free full-match checks, not by this score. v8's public gain over v4 comes mostly from one
+  correction that happens to fall inside the window.
 
-**Bottom line.** We are clearly above the published floor and the method is sound. Any further
-effort before the feature freeze should go on restart and stoppage timing, not on control
-detection. Such a change has to be justified by reasoning, because this window cannot confirm it.
+**Bottom line.** We are clearly above the published floor and the method is sound. The cheap,
+principled improvements (the Laws of the Game refinements in v5–v8) are in. What remains is
+limited by the data: tracking that loses the ball or mislabels a player, and possessions shorter
+than the tracking can resolve. A further change has to be justified by reasoning, because this
+window cannot confirm it.
 
 ## Full-match checks (no labels)
 
-From `python run_pipeline.py`: 302 possessions (2.85 per minute), mean 11.2 s, median 7.7 s,
-5.96% shorter than 1 s, 46.90% of graded frames dead, home share in play 58.93%, no X on graded
-frames. Version history is in `reports/ablation.csv`.
+From `python run_pipeline.py` (v8): 295 possessions (2.79 per minute), mean 11.4 s, median 7.9 s,
+5.42% shorter than 1 s, 47.04% of graded frames dead, home share in play 59.25%, no X on graded
+frames. v4 had 302, 11.2 s, 5.96%, 46.90% and 58.93%. Version history is in `reports/ablation.csv`.
 
 ## Label-free validation (full match)
 
-Three tests on the submitted version that need no labels. They measure consistency and
+Measured on v4. v5–v8 change 0.49% of graded frames; Smart Tagging agreement for v8 is 81.57%
+overall and 82.14% outside the public window (v4: 81.65% and 82.03%).
+
+Three tests on the v4 version that need no labels. They measure consistency and
 stability, not accuracy. Details are in `docs/YT.md` section 6.
 
 | Test | Result |
@@ -82,6 +99,8 @@ stability, not accuracy. Details are in `docs/YT.md` section 6.
 | Hiding 5% / 10% / 20% of the visible ball | 0.8–1.2% / 1.4–1.8% / 3.2–4.2% of labels change; possession agreement with the unhidden output (spellF1) 0.97–0.98 / 0.96 / 0.88–0.90; possessions merge (302 to 280–300) rather than split |
 
 ## Conservative reception experiment
+
+*Measured on v4.*
 
 An optional pass-reception detector now produces ownership changes only after visible ball flight,
 same-team passer evidence, stable receiver proximity, opponent separation, and confirmed control.
@@ -139,6 +158,8 @@ Macro-F1 to 0.8527, lowers public Spell-F1 to 0.4914, and increases predicted pu
 contested or C3-inconsistent, not because the original dwell is starving the detector.
 
 ## Dead-ball sanity check (no labels)
+
+*Measured on v4. v8 joins the stoppages around two goals and their kick-offs (see `docs/YT.md` section 3).*
 
 Generated from `YT.csv` with `python -m yt.sanity YT.csv`. The `frame` column was checked against
 the row index and passed. Dead stretches were found independently per graded half, with exclusive
@@ -247,20 +268,46 @@ spellF1 = mean possession-spell F1 over IoU 0.3/0.4/0.5/0.6/0.7; transF1/lat_f a
 
 rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f  shareE  frag
 ----  ------------------------  -------  -------  -----  ------  -------  -----  ------  ----
-   1  YT                         0.8533   0.5059     17    13.9   0.1500   -9.0   0.036  1.00
-   2  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
-   3  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
-   4  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
-   5  baseline_raw               0.5972   0.0378    131     2.0   0.1410   -3.1   0.046  6.52
+   1  YT                         0.8671   0.5500     15    15.8   0.2105   -0.5   0.019  0.90
+   2  YT_v4                      0.8533   0.5059     17    13.9   0.1500   -9.0   0.036  1.00
+   3  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
+   4  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
+   5  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
+   6  baseline_raw               0.5972   0.0378    131     2.0   0.1410   -3.1   0.046  6.52
 
 macroF1 would order the field differently -- these move, biggest first:
-  baseline_smooth125         board #2   -> macroF1 #5    DOWN 3
-  baseline_smooth50          board #3   -> macroF1 #2    up 1
-  baseline_smooth25          board #4   -> macroF1 #3    up 1
-  baseline_raw               board #5   -> macroF1 #4    up 1
+  baseline_smooth125         board #3   -> macroF1 #6    DOWN 3
+  baseline_smooth50          board #4   -> macroF1 #3    up 1
+  baseline_smooth25          board #5   -> macroF1 #4    up 1
+  baseline_raw               board #6   -> macroF1 #5    up 1
   one that rises under macroF1 is trading possession structure for per-frame accuracy
 
 YT
+  macro F1 0.8671  (H 0.8706  A 0.8684  D 0.8622)   kappa 0.7927  acc 0.8681
+  bootstrap macroF1 5-95 pct  0.7216 .. 0.9122   (21 segments, 1000 draws)
+  per class          precision   recall       F1   support
+    H                 0.8931   0.8492   0.8706      3454
+    A                 0.8574   0.8797   0.8684      2577
+    D                 0.8340   0.8924   0.8622      1469
+  confusion  rows=GT cols=pred         H       A       D       X
+                          H        2933     312     209       0
+                          A         258    2267      52       0
+                          D          93      65    1311       0
+                          X       46564   31640   73153   40462
+  transitions  gt 20  pred 18
+      tau=12  P 0.1111  R 0.1000  F1 0.1053   matched 2  missed 18  spurious 16
+      tau=25  P 0.2222  R 0.2000  F1 0.2105   matched 4  missed 16  spurious 14
+  latency      mean -0.5  median -3.5  p90|lat| 24  ambiguous 0
+  possessions  gt 17  pred 15  (-2)   mean duration 15.8 s vs 14.2 s (+11%)
+  spell F1     mean 0.5500   @0.3 0.6875  @0.4 0.6875  @0.5 0.6250  @0.6 0.5000  @0.7 0.2500
+      bootstrap 5-95 pct  0.3875 .. 0.7131   (17 possessions, 1000 draws)
+      IoU 0.5   P 0.6667  R 0.5882  F1 0.6250   matched 10  missed 7  spurious 5
+  alive/dead F1 0.9650   team acc  gt-alive 0.8622  both-alive 0.9012
+  share        gt home 0.5727  pred 0.5540  err 0.0187
+  fragmentation  19 / 21 = 0.90
+  abstained    0 frames of X on graded ground truth (0.00%)
+
+YT_v4
   macro F1 0.8533  (H 0.8520  A 0.8485  D 0.8594)   kappa 0.7685  acc 0.8523
   bootstrap macroF1 5-95 pct  0.7078 .. 0.8989   (21 segments, 1000 draws)
   per class          precision   recall       F1   support
@@ -385,5 +432,4 @@ baseline_raw
   share        gt home 0.5727  pred 0.6184  err 0.0457
   fragmentation  137 / 21 = 6.52
   abstained    0 frames of X on graded ground truth (0.00%)
-
 ```
