@@ -1,0 +1,4 @@
+# Keep CSV files byte-identical on every OS: never convert their line endings.
+# The submission must be regenerated as exactly the same file, and Windows checkouts
+# otherwise turn LF into CRLF (same content, different SHA-256).
+*.csv -text
